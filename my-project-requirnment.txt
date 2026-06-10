@@ -1,0 +1,311 @@
+# PROMPT — Build Simple MVP Telegram → MT5 Multi-Account Copier (Ultra Low-Cost VPS Version)
+
+Build a SIMPLE MVP version of a Telegram-to-MT5 copy trading system.
+
+IMPORTANT:
+Do NOT overengineer.
+Do NOT use microservices.
+Do NOT use Kubernetes.
+Do NOT use complex database architecture.
+Do NOT use React/Vue frontend.
+Do NOT use MetaAPI.
+Do NOT use expensive infrastructure.
+
+Goal is:
+FAST + CHEAP + STABLE MVP.
+
+The ONLY recurring cost should be:
+
+* Cheap VPS
+
+System should comfortably support:
+
+* 10–20 MT5 accounts in real-time
+* Future upgrade path to 50 accounts
+
+---
+
+# CORE GOAL
+
+Create a lightweight self-hosted system where:
+
+1. Telegram channels/groups provide trading signals
+2. Signals are parsed automatically
+3. Trades execute on multiple MT5 accounts
+4. Lightweight HTML page shows account/trade status
+5. Entire system runs on cheap Ubuntu VPS
+
+---
+
+# MVP ARCHITECTURE
+
+Keep architecture VERY SIMPLE.
+
+Use only:
+
+* Python
+* Telethon
+* MetaTrader5 Python package
+* Flask OR FastAPI
+* Simple HTML/CSS/JS
+* JSON file storage OR SQLite only
+* Supervisor/systemd
+* Ubuntu VPS
+
+NO PostgreSQL.
+NO Redis.
+NO Docker Swarm.
+NO Kubernetes.
+NO React.
+NO complex frontend.
+
+---
+
+# TELEGRAM SIGNAL LISTENER
+
+Use:
+
+* Telethon
+
+Features:
+
+* Monitor multiple Telegram channels/groups
+* Parse:
+
+  * BUY
+  * SELL
+  * SL
+  * TP
+  * CLOSE
+  * MODIFY SL/TP
+* Ignore duplicate messages
+* Auto reconnect
+* Retry on disconnect
+
+Example signal formats:
+
+BUY XAUUSD
+SL 3340
+TP 3360
+
+SELL GBPUSD
+SL 1.2710
+TP 1.2650
+
+CLOSE XAUUSD
+
+Need simple regex-based parser.
+
+---
+
+# MT5 EXECUTION ENGINE
+
+MOST IMPORTANT PART.
+
+Need LOW RESOURCE architecture.
+
+Requirements:
+
+* Execute trades on 10–20 MT5 accounts simultaneously
+* Real-time execution
+* Low latency
+* Low RAM usage
+* Auto reconnect
+* Auto login recovery
+
+Use:
+
+* MT5 Python package
+* Multiple lightweight MT5 terminal instances
+* Wine + Xvfb on Ubuntu
+
+Need:
+
+* Async execution model
+* Thread pool OR asyncio
+* Trade queue
+* Retry failed trades
+
+Support:
+
+* Market orders
+* SL/TP
+* Close trades
+* Modify trades
+
+No advanced enterprise logic needed for MVP.
+
+---
+
+# VPS REQUIREMENTS
+
+Optimize system for:
+
+* 2 vCPU
+* 4GB RAM
+* Ubuntu Server
+
+Need estimated RAM usage for:
+
+* 5 accounts
+* 10 accounts
+* 20 accounts
+
+Need maximum optimization tips:
+
+* Wine optimization
+* Disable MT5 charts/history
+* Headless mode
+* Process cleanup
+* Supervisor auto restart
+
+---
+
+# SIMPLE HTML DASHBOARD
+
+Need VERY SIMPLE dashboard.
+
+No React/Vue.
+
+Use:
+
+* HTML
+* TailwindCSS CDN
+* Vanilla JS
+
+Dashboard should show:
+
+## Accounts
+
+* Account ID
+* Connected/disconnected
+* Balance
+* Equity
+* Open trades
+
+## Trades
+
+* Symbol
+* Buy/Sell
+* Profit/Loss
+* Status
+
+## VPS Status
+
+* RAM usage
+* CPU usage
+
+Need:
+
+* Auto-refresh every few seconds
+* Simple clean UI
+* Mobile responsive
+
+No authentication needed for MVP.
+
+---
+
+# STORAGE
+
+Use ONLY:
+
+* SQLite OR JSON files
+
+Need:
+
+* account configs
+* open trades
+* logs
+* signals
+
+Keep storage lightweight.
+
+---
+
+# PROJECT STRUCTURE
+
+Need clean simple structure like:
+
+project/
+│
+├── main.py
+├── telegram_listener.py
+├── mt5_executor.py
+├── parser.py
+├── dashboard.py
+├── accounts.json
+├── trades.json
+├── logs/
+├── templates/
+├── static/
+└── utils/
+
+Need maintainable beginner-friendly structure.
+
+---
+
+# AUTO RECOVERY
+
+Need:
+
+* Auto restart on crash
+* MT5 reconnect
+* Telegram reconnect
+* Retry failed trades
+
+Use:
+
+* Supervisor OR systemd
+
+Need config examples.
+
+---
+
+# DEPLOYMENT
+
+Need FULL deployment steps for:
+
+* Ubuntu VPS
+* Wine installation
+* MT5 installation
+* Python setup
+* Supervisor setup
+* Nginx setup
+
+Need:
+
+* Commands
+* Folder setup
+* Service setup
+
+---
+
+# FINAL DELIVERABLES REQUIRED
+
+Generate:
+
+1. Complete lightweight architecture
+2. VPS optimization strategy
+3. Folder structure
+4. Telegram parser code
+5. MT5 execution code
+6. Simple dashboard starter
+7. Async trade execution flow
+8. Deployment guide
+9. Supervisor configs
+10. Resource usage estimates
+
+---
+
+# MOST IMPORTANT PRIORITIES
+
+Priority order:
+
+1. LOW VPS COST
+2. STABILITY
+3. SIMPLE CODEBASE
+4. LOW RAM USAGE
+5. REAL-TIME EXECUTION
+6. EASY MAINTENANCE
+
+Need practical real-world MVP solution — not enterprise overengineering.
