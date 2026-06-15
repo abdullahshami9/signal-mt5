@@ -2,6 +2,7 @@ import sys
 import os
 import argparse
 import time
+import shutil
 import MetaTrader5 as mt5
 from utils.db import (
     get_account, update_account_status, get_pending_signals_for_account,
@@ -18,6 +19,8 @@ def parse_args():
 def connect_mt5(account):
     """
     Initializes MT5 connection and logs into the account.
+    Automatically creates an isolated terminal copy for this account in the
+    workspace to support running multiple accounts in parallel without conflicts.
     """
     login = int(account["login"])
     password = account["password"]
@@ -30,25 +33,121 @@ def connect_mt5(account):
         update_account_status(login, 0, 0, "disconnected", f"Path not found: {path}")
         return False
 
+    add_log("INFO", f"executor_acc_{login}", "Preparing isolated terminal copy...")
+    
+    # Create isolated directory inside the project workspace
+    project_dir = os.path.abspath(os.path.dirname(__file__))
+    instances_dir = os.path.join(project_dir, "mt5_instances")
+    os.makedirs(instances_dir, exist_ok=True)
+    
+    acc_dir = os.path.join(instances_dir, f"acc_{login}")
+    os.makedirs(acc_dir, exist_ok=True)
+    
+    source_dir = os.path.dirname(path)
+    # If the executable path is inside a "terminal" subfolder, look in the parent folder
+    # to copy the complete installation files (Config, Bases etc.) if they exist there
+    parent_dir = os.path.dirname(source_dir)
+    if os.path.exists(os.path.join(parent_dir, "Config")) and os.path.basename(source_dir).lower() == "terminal":
+        source_dir = parent_dir
+        
+    dest_exe = os.path.join(acc_dir, "terminal64.exe")
+    dest_config = os.path.join(acc_dir, "Config")
+    
+    # Copy terminal files if dest_exe doesn't exist
+    if not os.path.exists(dest_exe):
+        add_log("INFO", f"executor_acc_{login}", f"Copying terminal files to isolated directory {acc_dir}...")
+        try:
+            for item in os.listdir(source_dir):
+                s = os.path.join(source_dir, item)
+                d = os.path.join(acc_dir, item)
+                # Ignore heavy files/folders and terminal subfolder to keep it clean and fast
+                if item.lower() in ["bases", "profiles", "logs", "mql5", "terminal"]:
+                    continue
+                if os.path.isdir(s):
+                    shutil.copytree(s, d, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(s, d)
+            add_log("INFO", f"executor_acc_{login}", "Terminal files copied successfully.")
+        except Exception as e:
+            add_log("ERROR", f"executor_acc_{login}", f"Failed to copy terminal files: {e}")
+            update_account_status(login, 0, 0, "disconnected", f"Copy failed: {e}")
+            return False
+            
+    # Copy Config folder specifically to ensure we get servers.dat
+    src_config = os.path.join(source_dir, "Config")
+    if os.path.exists(src_config) and not os.path.exists(os.path.join(dest_config, "servers.dat")):
+        os.makedirs(dest_config, exist_ok=True)
+        try:
+            shutil.copy2(os.path.join(src_config, "servers.dat"), os.path.join(dest_config, "servers.dat"))
+        except Exception as e:
+            add_log("WARNING", f"executor_acc_{login}", f"Failed to copy servers.dat: {e}")
+            
+    # Write a default common.ini file in UTF-16 to bypass the startup wizard
+    dest_ini = os.path.join(dest_config, "common.ini")
+    if not os.path.exists(dest_ini):
+        try:
+            os.makedirs(dest_config, exist_ok=True)
+            ini_content = (
+                f"[Common]\n"
+                f"Login={login}\n"
+                f"Server={server}\n"
+                f"ProxyEnable=0\n"
+                f"ProxyType=0\n"
+                f"ProxyAddress=\n"
+                f"EnableOpenCL=7\n"
+                f"ProxyAuth=\n"
+                f"CertInstall=0\n"
+                f"NewsEnable=0\n"
+                f"Services=4294967295\n"
+                f"NewsLanguages=\n"
+                f"Campaign=mt5android\n"
+                f"Source=metaquotes.mt5.android\n\n"
+                f"[Charts]\n"
+                f"ProfileLast=Default\n"
+                f"MaxBars=5000\n"
+                f"PrintColor=0\n"
+                f"SaveDeleted=0\n"
+                f"TradeHistory=1\n"
+                f"TradeLevels=1\n"
+                f"TradeLevelsDrag=0\n"
+                f"PreloadCharts=0\n\n"
+                f"[Experts]\n"
+                f"AllowDllImport=0\n"
+                f"Enabled=0\n"
+                f"Account=1\n"
+                f"Profile=1\n"
+                f"Chart=0\n"
+                f"Api=0\n"
+                f"WebRequest=1\n"
+                f"WebRequestUrl=\n\n"
+                f"[Sound]\n"
+                f"Enable=0\n"
+            )
+            with open(dest_ini, "w", encoding="utf-16") as f:
+                f.write(ini_content)
+        except Exception as e:
+            add_log("WARNING", f"executor_acc_{login}", f"Failed to create common.ini: {e}")
+
     add_log("INFO", f"executor_acc_{login}", f"Initializing MT5 connection...")
     
-    # Initialize connection
-    init_params = {}
-    if path:
-        init_params["path"] = path
-        
-    # On Windows, running with portable=True inside write-protected Program Files causes UAC or write failures,
-    # leading to IPC timeout (-10005). We use portable=True on non-Windows (Linux/Wine VPS) and False on Windows.
-    if os.name != 'nt':
-        init_params["portable"] = True
-        
+    # Initialize connection in portable mode using our isolated terminal copy.
+    # We pass credentials directly to bypass wizards and auto-login.
+    init_params = {
+        "path": dest_exe,
+        "login": login,
+        "password": password,
+        "server": server,
+        "portable": True,
+        "timeout": 30000 # 30 seconds to allow startup and connection
+    }
+    
     if not mt5.initialize(**init_params):
         err = mt5.last_error()
         add_log("ERROR", f"executor_acc_{login}", f"MT5 initialize failed: {err}")
         update_account_status(login, 0, 0, "disconnected", f"Init failed: {err}")
         return False
         
-    # Attempt Login
+    # Attempt Login as a backup to verify connection
     if not mt5.login(login=login, password=password, server=server):
         err = mt5.last_error()
         add_log("ERROR", f"executor_acc_{login}", f"MT5 login failed: {err}")
