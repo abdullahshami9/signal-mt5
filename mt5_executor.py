@@ -33,9 +33,14 @@ def connect_mt5(account):
     add_log("INFO", f"executor_acc_{login}", f"Initializing MT5 connection...")
     
     # Initialize connection
-    init_params = {"portable": True}
+    init_params = {}
     if path:
         init_params["path"] = path
+        
+    # On Windows, running with portable=True inside write-protected Program Files causes UAC or write failures,
+    # leading to IPC timeout (-10005). We use portable=True on non-Windows (Linux/Wine VPS) and False on Windows.
+    if os.name != 'nt':
+        init_params["portable"] = True
         
     if not mt5.initialize(**init_params):
         err = mt5.last_error()
