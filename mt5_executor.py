@@ -77,13 +77,50 @@ def connect_mt5(account):
         update_account_status(login, 0, 0, "connected", f"Account info failed: {err}")
         return True
 
+def resolve_symbol(symbol):
+    """
+    Resolves the symbol name by checking if it exists directly on the account.
+    If not, tries prefix and suffix matches (e.g. 'XAUUSD' -> 'XAUUSD.c').
+    """
+    # Try exact match first
+    if mt5.symbol_select(symbol, True):
+        return symbol
+        
+    # Standardize input symbol
+    clean = symbol.upper().replace("/", "").replace("-", "").strip()
+    if clean == "GOLD":
+        clean = "XAUUSD"
+        
+    # Try match with normalized symbol
+    if mt5.symbol_select(clean, True):
+        return clean
+        
+    # If still not found, search the broker's symbols list
+    symbols = mt5.symbols_get()
+    if symbols:
+        # Match exactly normalized
+        for s in symbols:
+            name_upper = s.name.upper()
+            if name_upper == clean:
+                if mt5.symbol_select(s.name, True):
+                    return s.name
+                    
+        # Match by prefix/suffix
+        for s in symbols:
+            name_upper = s.name.upper()
+            if name_upper.startswith(clean) or clean.startswith(name_upper):
+                if mt5.symbol_select(s.name, True):
+                    return s.name
+                    
+    return symbol
+
 def process_trade_signal(account, signal):
     """
     Executes a BUY/SELL signal with 1% risk-based lot sizing.
     """
     login = int(account["login"])
     account_id = account["id"]
-    symbol = signal["symbol"]
+    symbol = resolve_symbol(signal["symbol"])
     action = signal["action"]
     sl = signal["sl"]
     
@@ -205,7 +242,7 @@ def process_close_signal(account, signal):
     """
     login = int(account["login"])
     account_id = account["id"]
-    symbol = signal["symbol"]
+    symbol = resolve_symbol(signal["symbol"])
     
     positions = mt5.positions_get(symbol=symbol)
     if not positions:
@@ -255,7 +292,7 @@ def process_modify_signal(account, signal):
     """
     login = int(account["login"])
     account_id = account["id"]
-    symbol = signal["symbol"]
+    symbol = resolve_symbol(signal["symbol"])
     new_sl = signal["sl"]
     new_tp1 = signal["tp1"]
     new_tp2 = signal["tp2"]

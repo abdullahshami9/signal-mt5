@@ -64,7 +64,7 @@ async def get_dashboard(request: Request):
         return HTMLResponse(f.read())
 
 @app.get("/signal_checker")
-async def signal_checker(symbol: str = "EURUSD", action: str = "BUY"):
+async def signal_checker(symbol: str = "XAUUSD", action: str = "BUY"):
     """
     Test endpoint to automatically inject a signal for 0.01 lot trade execution.
     """
