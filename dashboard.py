@@ -13,7 +13,7 @@ from telethon.errors import SessionPasswordNeededError
 from utils.db import (
     get_accounts, add_account, delete_account, set_account_active,
     get_recent_trades, get_recent_signals, get_recent_logs,
-    get_settings, save_settings, add_log
+    get_settings, save_settings, add_log, add_signal
 )
 
 app = FastAPI(title="Antigravity MT5 Copier Dashboard")
@@ -62,6 +62,48 @@ async def get_dashboard(request: Request):
         return HTMLResponse("<h1>Dashboard templates/index.html not found!</h1>", status_code=404)
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(f.read())
+
+@app.get("/signal_checker")
+async def signal_checker(symbol: str = "EURUSD", action: str = "BUY"):
+    """
+    Test endpoint to automatically inject a signal for 0.01 lot trade execution.
+    """
+    try:
+        action = action.upper().strip()
+        if action not in ["BUY", "SELL"]:
+            raise HTTPException(status_code=400, detail="Action must be BUY or SELL")
+            
+        symbol = symbol.upper().strip()
+        
+        # Add a dummy signal with telegram_msg_id=9999 to identify as manual test
+        # Using a raw_text prefix of TEST_SIGNAL so the executor knows to use 0.01 lots and bypass SL.
+        msg_id = 9999
+        channel_id = 0
+        raw_text = f"TEST_SIGNAL: {action} {symbol}"
+        
+        signal_id = add_signal(
+            telegram_msg_id=msg_id,
+            channel_id=channel_id,
+            raw_text=raw_text,
+            action=action,
+            symbol=symbol,
+            sl=None,
+            tp1=None,
+            tp2=None,
+            tp3=None
+        )
+        
+        add_log("INFO", "dashboard", f"Injected manual test signal {signal_id} ({action} {symbol}) via /signal_checker")
+        return {
+            "status": "success",
+            "message": f"Test signal injected successfully.",
+            "signal_id": signal_id,
+            "action": action,
+            "symbol": symbol,
+            "lot_size": 0.01
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/stats")
 async def get_stats():

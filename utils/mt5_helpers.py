@@ -102,10 +102,16 @@ def get_filling_mode(symbol_info):
     if not symbol_info:
         return mt5.ORDER_FILLING_IOC
         
+    # MetaTrader5 python library does not define SYMBOL_FILLING_FOK and SYMBOL_FILLING_IOC constants.
+    # We define them here according to MT5/MQL5 specifications:
+    # SYMBOL_FILLING_FOK = 1, SYMBOL_FILLING_IOC = 2
+    SYMBOL_FILLING_FOK = 1
+    SYMBOL_FILLING_IOC = 2
+    
     filling = symbol_info.filling_mode
-    if filling & mt5.SYMBOL_FILLING_FOK:
+    if filling & SYMBOL_FILLING_FOK:
         return mt5.ORDER_FILLING_FOK
-    elif filling & mt5.SYMBOL_FILLING_IOC:
+    elif filling & SYMBOL_FILLING_IOC:
         return mt5.ORDER_FILLING_IOC
     else:
         return mt5.ORDER_FILLING_RETURN

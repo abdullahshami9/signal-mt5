@@ -87,8 +87,10 @@ def process_trade_signal(account, signal):
     action = signal["action"]
     sl = signal["sl"]
     
-    # SL is mandatory for risk-based lot calculations
-    if not sl:
+    is_test = "TEST_SIGNAL" in signal.get("raw_text", "")
+    
+    # SL is mandatory for risk-based lot calculations (except for test signals)
+    if not sl and not is_test:
         add_log("WARNING", f"executor_acc_{login}", f"Skipped Signal {signal['id']}: Stop Loss (SL) is required for 1% risk calculation.")
         mark_signal_executed(account_id, signal["id"], "skipped", "Missing mandatory Stop Loss")
         return
@@ -119,17 +121,21 @@ def process_trade_signal(account, signal):
         mark_signal_executed(account_id, signal["id"], "failed", "Account info unavailable")
         return
         
-    # Calculate Lot size based on 1% risk
-    risk_pct = account.get("risk_pct", 1.0)
-    total_lots = calculate_lot_size(acc_info.balance, risk_pct, symbol_info, entry_price, sl)
-    
-    if not total_lots or total_lots <= 0:
-        add_log("ERROR", f"executor_acc_{login}", f"Lot calculation failed for {symbol}. Raw value too small or invalid parameters.")
-        mark_signal_executed(account_id, signal["id"], "failed", "Invalid calculated volume")
-        return
+    # Calculate Lot size based on 1% risk or override for test signal
+    if is_test:
+        total_lots = 0.01
+        tp1_lots, tp2_lots, tp3_lots = 0.01, 0.0, 0.0
+    else:
+        risk_pct = account.get("risk_pct", 1.0)
+        total_lots = calculate_lot_size(acc_info.balance, risk_pct, symbol_info, entry_price, sl)
         
-    # Divide lot sizes for TP1/TP2/TP3
-    tp1_lots, tp2_lots, tp3_lots = divide_lots(total_lots, symbol_info.volume_step)
+        if not total_lots or total_lots <= 0:
+            add_log("ERROR", f"executor_acc_{login}", f"Lot calculation failed for {symbol}. Raw value too small or invalid parameters.")
+            mark_signal_executed(account_id, signal["id"], "failed", "Invalid calculated volume")
+            return
+            
+        # Divide lot sizes for TP1/TP2/TP3
+        tp1_lots, tp2_lots, tp3_lots = divide_lots(total_lots, symbol_info.volume_step)
     
     # Broker side safety: Set broker TP to the furthest TP (TP3, TP2, or TP1)
     broker_tp = None
@@ -150,7 +156,7 @@ def process_trade_signal(account, signal):
         "volume": total_lots,
         "type": order_type,
         "price": entry_price,
-        "sl": float(sl),
+        "sl": float(sl) if sl else 0.0,
         "deviation": 20,
         "magic": 100000 + account_id,
         "comment": f"Antigravity Copier S{signal['id']}",
