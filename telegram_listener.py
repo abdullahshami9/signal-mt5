@@ -102,7 +102,9 @@ async def main():
                     sl=parsed.get("sl"),
                     tp1=parsed.get("tp1"),
                     tp2=parsed.get("tp2"),
-                    tp3=parsed.get("tp3")
+                    tp3=parsed.get("tp3"),
+                    entry_min=parsed.get("entry_min"),
+                    entry_max=parsed.get("entry_max")
                 )
         except Exception as e:
             add_log("ERROR", "listener", f"Error in message handler: {e}")

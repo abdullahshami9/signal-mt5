@@ -47,9 +47,21 @@ def init_db():
         tp1 REAL,
         tp2 REAL,
         tp3 REAL,
+        entry_min REAL,
+        entry_max REAL,
         status TEXT DEFAULT 'pending' -- pending, processed
     )
     """)
+    
+    # Ensure entry_min and entry_max columns exist in case table was created already
+    try:
+        cursor.execute("ALTER TABLE signals ADD COLUMN entry_min REAL")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE signals ADD COLUMN entry_max REAL")
+    except sqlite3.OperationalError:
+        pass
     
     # Trades table
     cursor.execute("""
@@ -234,14 +246,14 @@ def save_settings(settings_dict):
         conn.close()
 
 # Signals management
-def add_signal(telegram_msg_id, channel_id, raw_text, action, symbol, sl=None, tp1=None, tp2=None, tp3=None):
+def add_signal(telegram_msg_id, channel_id, raw_text, action, symbol, sl=None, tp1=None, tp2=None, tp3=None, entry_min=None, entry_max=None):
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
         cursor.execute("""
-        INSERT INTO signals (telegram_msg_id, channel_id, raw_text, action, symbol, sl, tp1, tp2, tp3)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (telegram_msg_id, channel_id, raw_text, action, symbol, sl, tp1, tp2, tp3))
+        INSERT INTO signals (telegram_msg_id, channel_id, raw_text, action, symbol, sl, tp1, tp2, tp3, entry_min, entry_max)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (telegram_msg_id, channel_id, raw_text, action, symbol, sl, tp1, tp2, tp3, entry_min, entry_max))
         signal_id = cursor.lastrowid
         conn.commit()
         add_log("INFO", "listener", f"Inserted parsed signal {signal_id} ({action} {symbol}) from Telegram")

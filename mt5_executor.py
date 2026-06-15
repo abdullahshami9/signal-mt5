@@ -152,6 +152,27 @@ def process_trade_signal(account, signal):
         return
         
     entry_price = tick.ask if action == "BUY" else tick.bid
+    
+    # Enforce entry price range validation
+    entry_min = signal.get("entry_min")
+    entry_max = signal.get("entry_max")
+    
+    if entry_min is not None and entry_max is not None:
+        if entry_min == entry_max:
+            point = symbol_info.point if symbol_info.point > 0 else 0.00001
+            tolerance = 100 * point
+            allowed_min = entry_min - tolerance
+            allowed_max = entry_max + tolerance
+        else:
+            allowed_min = entry_min
+            allowed_max = entry_max
+            
+        if not (allowed_min <= entry_price <= allowed_max):
+            msg = f"Skipped: Current price ({entry_price}) outside range ({allowed_min} - {allowed_max})"
+            add_log("WARNING", f"executor_acc_{login}", f"Signal {signal['id']} skipped. {msg}")
+            mark_signal_executed(account_id, signal["id"], "skipped", msg)
+            return
+            
     acc_info = mt5.account_info()
     if not acc_info:
         add_log("ERROR", f"executor_acc_{login}", "Failed to retrieve account info for lot calculation")
@@ -393,7 +414,7 @@ def monitor_open_trades(account):
                 close_price = exit_deal.price
                 
                 # Sum PnL of all deals for this position
-                pnl = sum(d.profit + d.swap + d.commission for d in history_deals)
+                pnl = sum(d.profit + d.swap + getattr(d, 'commission', 0.0) for d in history_deals)
                 
             update_trade_tp_status(
                 trade_id=trade["id"],
@@ -408,7 +429,7 @@ def monitor_open_trades(account):
         pos = positions[0]
         symbol = pos.symbol
         price_current = pos.price_current
-        pnl = pos.profit + pos.swap + pos.commission
+        pnl = pos.profit + pos.swap + getattr(pos, 'commission', 0.0)
         
         # Update live PnL in database
         update_trade_tp_status(trade_id=trade["id"], pnl=pnl)
