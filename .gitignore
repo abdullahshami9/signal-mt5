@@ -1,0 +1,25 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Database
+trading_bot.db
+trading_bot.db-shm
+trading_bot.db-wal
+
+# Telegram session files (sensitive auth data)
+telegram/
+*.session
+*.session-journal
+
+# MT5 Isolated Terminal Instances
+mt5_instances/
+
+# Environment variables
+.env
+
+# Virtual environments
+venv/
+.venv/
+env/
