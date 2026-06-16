@@ -217,6 +217,10 @@
             </div>
             <form id="add-account-form" onsubmit="submitAddAccount(event)" class="space-y-3 text-sm">
                 <div>
+                    <label class="block text-xs font-bold text-gray-400 mb-1">Account Name (Optional)</label>
+                    <input type="text" id="acc-name" placeholder="e.g. Master Account" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                </div>
+                <div>
                     <label class="block text-xs font-bold text-gray-400 mb-1">MT5 Login ID *</label>
                     <input type="number" id="acc-login" required class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
                 </div>
@@ -233,9 +237,15 @@
                     <input type="text" id="acc-path" placeholder="e.g. C:\Program Files\MetaTrader 5\terminal64.exe" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
                     <p class="text-[10px] text-gray-500 mt-1">Leave empty to auto-copy terminal from standard path. If using a custom broker terminal, provide the path to its terminal64.exe.</p>
                 </div>
-                <div>
-                    <label class="block text-xs font-bold text-gray-400 mb-1">Risk Percentage (%) per Trade</label>
-                    <input type="number" step="0.1" id="acc-risk" value="1.0" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 mb-1">Risk Percentage (%) *</label>
+                        <input type="number" step="0.1" id="acc-risk" value="1.0" required class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 mb-1">Payment Date (Optional)</label>
+                        <input type="date" id="acc-payment-date" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                    </div>
                 </div>
                 <div class="pt-3 flex justify-end space-x-3">
                     <button type="button" onclick="closeAccountModal()" class="px-4 py-2 bg-gray-800 text-gray-300 rounded-xl hover:bg-gray-700">Cancel</button>
@@ -343,7 +353,9 @@
                 password: document.getElementById("acc-password").value,
                 server: document.getElementById("acc-server").value,
                 terminal_path: document.getElementById("acc-path").value.trim() || "",
-                risk_pct: parseFloat(document.getElementById("acc-risk").value)
+                risk_pct: parseFloat(document.getElementById("acc-risk").value),
+                name: document.getElementById("acc-name").value.trim() || null,
+                payment_date: document.getElementById("acc-payment-date").value || null
             };
 
             try {
@@ -538,12 +550,18 @@
                         card.innerHTML = `
                             <div class="flex justify-between items-start">
                                 <div>
-                                    <h4 class="font-bold text-white text-base">${a.login}</h4>
+                                    <h4 class="font-bold text-white text-base">${a.name ? `${a.name} <span class="text-xs font-normal text-gray-400">(${a.login})</span>` : a.login}</h4>
                                     <p class="text-[10px] text-gray-500 font-semibold">${a.server}</p>
                                 </div>
-                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${isConnected ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}">
-                                    ${a.connection_status}
-                                </span>
+                                <div class="flex flex-col items-end space-y-1.5">
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${isConnected ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}">
+                                        ${a.connection_status}
+                                    </span>
+                                    ${a.payment_date ? `
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                        Paid: ${a.payment_date}
+                                    </span>` : ''}
+                                </div>
                             </div>
                             
                             <div class="grid grid-cols-2 gap-2 text-xs">

@@ -37,6 +37,8 @@ class AccountCreate(BaseModel):
     server: str
     terminal_path: Optional[str] = None
     risk_pct: Optional[float] = 1.0
+    name: Optional[str] = None
+    payment_date: Optional[str] = None
 
 class SettingsUpdate(BaseModel):
     api_id: str
@@ -146,7 +148,9 @@ async def api_add_account(acc: AccountCreate):
         password=acc.password,
         server=acc.server,
         terminal_path=acc.terminal_path,
-        risk_pct=acc.risk_pct
+        risk_pct=acc.risk_pct,
+        name=acc.name,
+        payment_date=acc.payment_date
     )
     if not success:
         raise HTTPException(status_code=400, detail="Account login already exists")

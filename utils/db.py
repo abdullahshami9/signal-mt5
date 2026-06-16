@@ -29,6 +29,8 @@ def init_db():
         equity REAL DEFAULT 0.0,
         connection_status TEXT DEFAULT 'disconnected',
         last_error TEXT,
+        name TEXT,
+        payment_date TEXT,
         last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
@@ -60,6 +62,16 @@ def init_db():
         pass
     try:
         cursor.execute("ALTER TABLE signals ADD COLUMN entry_max REAL")
+    except sqlite3.OperationalError:
+        pass
+        
+    # Ensure name and payment_date columns exist in accounts table in case table was created already
+    try:
+        cursor.execute("ALTER TABLE accounts ADD COLUMN name TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE accounts ADD COLUMN payment_date TEXT")
     except sqlite3.OperationalError:
         pass
     
@@ -161,13 +173,13 @@ def get_recent_logs(limit=100):
         conn.close()
 
 # Accounts management
-def add_account(login, password, server, terminal_path, risk_pct=1.0):
+def add_account(login, password, server, terminal_path, risk_pct=1.0, name=None, payment_date=None):
     conn = get_db_connection()
     try:
         conn.execute("""
-        INSERT INTO accounts (login, password, server, terminal_path, risk_pct)
-        VALUES (?, ?, ?, ?, ?)
-        """, (int(login), password, server, terminal_path or "", float(risk_pct)))
+        INSERT INTO accounts (login, password, server, terminal_path, risk_pct, name, payment_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (int(login), password, server, terminal_path or "", float(risk_pct), name, payment_date))
         conn.commit()
         add_log("INFO", "system", f"Added MT5 account {login} on server {server}")
         return True
