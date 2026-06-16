@@ -217,6 +217,7 @@ def process_trade_signal(account, signal):
         tp1_lots, tp2_lots, tp3_lots = 0.01, 0.0, 0.0
     else:
         risk_pct = account.get("risk_pct", 1.0)
+        add_log("INFO", f"executor_acc_{login}", f"DEBUG: balance={acc_info.balance}, risk_pct={risk_pct}, symbol={symbol}, target_price={target_price}, sl={sl}, tick_size={symbol_info.trade_tick_size}, tick_val={symbol_info.trade_tick_value}")
         total_lots = calculate_lot_size(acc_info.balance, risk_pct, symbol_info, target_price, sl)
         
         if not total_lots or total_lots <= 0:
