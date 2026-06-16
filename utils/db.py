@@ -167,7 +167,7 @@ def add_account(login, password, server, terminal_path, risk_pct=1.0):
         conn.execute("""
         INSERT INTO accounts (login, password, server, terminal_path, risk_pct)
         VALUES (?, ?, ?, ?, ?)
-        """, (int(login), password, server, terminal_path, float(risk_pct)))
+        """, (int(login), password, server, terminal_path or "", float(risk_pct)))
         conn.commit()
         add_log("INFO", "system", f"Added MT5 account {login} on server {server}")
         return True

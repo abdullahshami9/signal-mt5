@@ -107,6 +107,13 @@ def main():
                     telegram_listener_proc = None
                     
             # --- Manage MT5 Executor Worker Subprocesses ---
+            try:
+                from utils.terminal_provisioner import sync_and_provision_all_accounts
+                sync_and_provision_all_accounts()
+            except Exception as e:
+                add_log("ERROR", "system", f"Failed to sync and provision terminals: {e}")
+                
+            accounts = get_accounts() # Fetch fresh accounts after provisioning
             active_db_account_ids = []
             
             for acc in accounts:

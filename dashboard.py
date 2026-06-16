@@ -35,7 +35,7 @@ class AccountCreate(BaseModel):
     login: int
     password: str
     server: str
-    terminal_path: str
+    terminal_path: Optional[str] = None
     risk_pct: Optional[float] = 1.0
 
 class SettingsUpdate(BaseModel):

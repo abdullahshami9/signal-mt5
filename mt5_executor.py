@@ -36,14 +36,12 @@ def connect_mt5(account):
 
     add_log("INFO", f"executor_acc_{login}", "Initializing MT5 connection...")
     
-    # On Windows, we run directly from the configured terminal path in standard mode.
-    # On Linux/Wine (VPS), we run in portable mode to support isolated instances.
+    # On both Windows and Linux, we run in portable mode to support completely isolated instances.
     init_params = {}
     if path:
         init_params["path"] = path
         
-    if os.name != 'nt':
-        init_params["portable"] = True
+    init_params["portable"] = True
         
     # Pass credentials directly inside initialize to auto-login and bypass wizard
     init_params["login"] = login

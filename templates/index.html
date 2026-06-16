@@ -229,9 +229,9 @@
                     <input type="text" id="acc-server" required placeholder="e.g. Pepperstone-MT5-Demo" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-gray-400 mb-1">Terminal executable Path (terminal64.exe) *</label>
-                    <input type="text" id="acc-path" required placeholder="e.g. C:\Program Files\MetaTrader 5\terminal64.exe" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
-                    <p class="text-[10px] text-gray-500 mt-1">If Linux, provide Wine relative Windows path like C:\Program Files\MetaTrader 5\terminal64.exe</p>
+                    <label class="block text-xs font-bold text-gray-400 mb-1">Terminal executable Path (Optional)</label>
+                    <input type="text" id="acc-path" placeholder="e.g. C:\Program Files\MetaTrader 5\terminal64.exe" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                    <p class="text-[10px] text-gray-500 mt-1">Leave empty to auto-copy terminal from standard path. If using a custom broker terminal, provide the path to its terminal64.exe.</p>
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-400 mb-1">Risk Percentage (%) per Trade</label>
@@ -342,7 +342,7 @@
                 login: parseInt(document.getElementById("acc-login").value),
                 password: document.getElementById("acc-password").value,
                 server: document.getElementById("acc-server").value,
-                terminal_path: document.getElementById("acc-path").value,
+                terminal_path: document.getElementById("acc-path").value.trim() || null,
                 risk_pct: parseFloat(document.getElementById("acc-risk").value)
             };
 
