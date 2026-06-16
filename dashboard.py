@@ -13,7 +13,7 @@ from telethon.errors import SessionPasswordNeededError
 from utils.db import (
     get_accounts, add_account, delete_account, set_account_active,
     get_recent_trades, get_recent_signals, get_recent_logs,
-    get_settings, save_settings, add_log, add_signal
+    get_settings, save_settings, add_log, add_signal, get_db_connection
 )
 
 app = FastAPI(title="Antigravity MT5 Copier Dashboard")
@@ -183,6 +183,47 @@ async def api_delete_account(account_id: int):
 @app.get("/api/trades")
 async def api_get_trades():
     return get_recent_trades(50)
+
+@app.post("/api/trades/{trade_id}/cancel")
+async def api_cancel_trade(trade_id: int):
+    conn = get_db_connection()
+    try:
+        trade = conn.execute("SELECT * FROM trades WHERE id = ?", (trade_id,)).fetchone()
+        if not trade:
+            raise HTTPException(status_code=404, detail="Trade not found")
+        trade = dict(trade)
+        if trade["status"] != "pending":
+            raise HTTPException(status_code=400, detail="Only pending orders can be cancelled")
+        
+        conn.execute("UPDATE trades SET status = 'cancel_requested', last_updated = CURRENT_TIMESTAMP WHERE id = ?", (trade_id,))
+        conn.commit()
+        
+        add_log("INFO", "dashboard", f"Cancel requested for pending trade ID {trade_id} (ticket {trade['ticket']})")
+        return {"status": "success", "message": "Cancel request submitted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+@app.post("/api/trades/cancel_all")
+async def api_cancel_all_trades():
+    conn = get_db_connection()
+    try:
+        pending_count = conn.execute("SELECT COUNT(*) FROM trades WHERE status = 'pending'").fetchone()[0]
+        if pending_count == 0:
+            return {"status": "success", "message": "No pending orders to cancel"}
+            
+        conn.execute("UPDATE trades SET status = 'cancel_requested', last_updated = CURRENT_TIMESTAMP WHERE status = 'pending'")
+        conn.commit()
+        
+        add_log("INFO", "dashboard", f"Cancel requested for all {pending_count} pending orders")
+        return {"status": "success", "message": f"Cancel request submitted for all {pending_count} pending orders"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
 
 @app.get("/api/signals")
 async def api_get_signals():

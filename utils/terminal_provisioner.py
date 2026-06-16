@@ -1,6 +1,102 @@
 import os
 import shutil
 import hashlib
+import time
+import psutil
+
+def terminate_executor_and_terminal(login, account_id, terminal_path):
+    # 1. Terminate executor subprocess
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            cmdline = proc.info['cmdline']
+            if cmdline and any('mt5_executor.py' in part for part in cmdline) and any(str(account_id) in part for part in cmdline):
+                print(f"Terminating executor process for account {login} (PID {proc.info['pid']})...")
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                except psutil.TimeoutExpired:
+                    proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    # 2. Terminate terminal64.exe
+    target_abs = os.path.abspath(terminal_path)
+    for proc in psutil.process_iter(['pid', 'name', 'exe']):
+        try:
+            if proc.info['exe'] and os.path.abspath(proc.info['exe']) == target_abs:
+                print(f"Terminating terminal process for account {login} (PID {proc.info['pid']})...")
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except psutil.TimeoutExpired:
+                    proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+
+def enable_experts_in_common_ini(config_dir):
+    common_ini_path = os.path.join(config_dir, "common.ini")
+    
+    # Check if file exists
+    if not os.path.exists(common_ini_path):
+        # Create a basic common.ini if missing
+        content = "[Experts]\r\nEnabled=1\r\n"
+        try:
+            with open(common_ini_path, "w", encoding="utf-16") as f:
+                f.write(content)
+        except Exception as e:
+            print(f"Warning: Failed to create common.ini: {e}")
+        return
+
+    # Read existing content
+    try:
+        with open(common_ini_path, "r", encoding="utf-16") as f:
+            lines = f.readlines()
+    except Exception:
+        # Fallback to standard open
+        try:
+            with open(common_ini_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception:
+            return
+
+    # Parse and update/add [Experts] section
+    out_lines = []
+    in_experts = False
+    has_enabled = False
+    
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            if in_experts and not has_enabled:
+                out_lines.append("Enabled=1\r\n")
+                has_enabled = True
+            if stripped == "[Experts]":
+                in_experts = True
+            else:
+                in_experts = False
+        
+        if in_experts and stripped.startswith("Enabled="):
+            out_lines.append("Enabled=1\r\n")
+            has_enabled = True
+        else:
+            out_lines.append(line)
+            
+    # If experts section was never closed and has not been added
+    if in_experts and not has_enabled:
+        out_lines.append("Enabled=1\r\n")
+        has_enabled = True
+        
+    # If [Experts] section wasn't found at all
+    if "[Experts]" not in [l.strip() for l in lines]:
+        out_lines.append("\r\n[Experts]\r\nEnabled=1\r\n")
+        
+    # Write back in UTF-16
+    try:
+        with open(common_ini_path, "w", encoding="utf-16") as f:
+            f.writelines(out_lines)
+    except Exception as e:
+        print(f"Warning: Failed to write common.ini: {e}")
 
 def find_mt5_source_dir(user_specified_path=None):
     """
@@ -117,9 +213,13 @@ Login={login}
 Password={password}
 Server={server}
 SavePassword=1
+EnableExperts=1
 """
     with open(startup_ini_path, "w", encoding="utf-8") as f:
         f.write(startup_content)
+
+    # 5. Enable Experts (Algo Trading) in common.ini
+    enable_experts_in_common_ini(dest_config_dir)
 
     return os.path.abspath(os.path.join(dest_dir, "terminal64.exe"))
 
@@ -145,17 +245,48 @@ def sync_and_provision_all_accounts():
                 os.path.dirname(__file__), "..", "mt5_instances", f"acc_{login}", "terminal64.exe"
             ))
             
-            # Re-provision if terminal64.exe is missing OR if Config/servers.dat is missing
+            # Re-provision if terminal64.exe is missing OR if Config/servers.dat is missing OR if EnableExperts is not in startup.ini OR if Enabled=1 is not in common.ini
             servers_dat_path = os.path.join(os.path.dirname(target_path), "Config", "servers.dat")
+            startup_ini_path = os.path.join(os.path.dirname(target_path), "Config", "startup.ini")
+            common_ini_path = os.path.join(os.path.dirname(target_path), "Config", "common.ini")
+            
+            has_enable_experts = False
+            if os.path.exists(startup_ini_path):
+                try:
+                    with open(startup_ini_path, "r", encoding="utf-8") as sf:
+                        if "EnableExperts" in sf.read():
+                            has_enable_experts = True
+                except Exception:
+                    pass
+
+            has_experts_enabled = False
+            if os.path.exists(common_ini_path):
+                try:
+                    with open(common_ini_path, "r", encoding="utf-16") as cf:
+                        content = cf.read()
+                        if "[Experts]" in content:
+                            experts_part = content.split("[Experts]")[1]
+                            if "[" in experts_part:
+                                experts_part = experts_part.split("[")[0]
+                            if "Enabled=1" in experts_part.replace(" ", ""):
+                                has_experts_enabled = True
+                except Exception:
+                    pass
+
             should_provision = (
                 not os.path.exists(target_path) or 
                 not os.path.exists(servers_dat_path) or 
+                not has_enable_experts or 
+                not has_experts_enabled or
                 os.path.abspath(current_path) != target_path
             )
 
             if should_provision:
                 try:
                     add_log("INFO", "system", f"Provisioning isolated MT5 terminal for account {login}...")
+                    # Terminate executor and terminal first to release file locks
+                    terminate_executor_and_terminal(login, acc["id"], target_path)
+                    time.sleep(1.0)
                     new_path = provision_isolated_terminal(login, password, server, current_path)
 
                     # Update terminal_path in DB

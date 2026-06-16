@@ -9,7 +9,8 @@ import MetaTrader5 as mt5
 from utils.db import (
     get_account, update_account_status, get_pending_signals_for_account,
     mark_signal_executed, add_trade, get_open_trades_for_account,
-    update_trade_tp_status, add_log, get_pending_trades_for_account
+    update_trade_tp_status, add_log, get_pending_trades_for_account,
+    get_cancel_requested_trades_for_account
 )
 from utils.mt5_helpers import calculate_lot_size, divide_lots, get_filling_mode
 
@@ -167,7 +168,19 @@ def process_trade_signal(account, signal):
         mark_signal_executed(account_id, signal["id"], "failed", f"Symbol {symbol} not found")
         return
         
-    symbol_info = mt5.symbol_info(symbol)
+    # Retry loop to get valid symbol info (handles MT5 startup caching issues)
+    symbol_info = None
+    for attempt in range(10):
+        info = mt5.symbol_info(symbol)
+        if info and info.trade_tick_value != 0.0 and info.trade_tick_size != 0.0:
+            symbol_info = info
+            break
+        add_log("WARNING", f"executor_acc_{login}", f"Symbol info for {symbol} has 0.0 tick value/size (Attempt {attempt+1}/10). Retrying...")
+        time.sleep(1.0)
+        
+    if not symbol_info:
+        symbol_info = mt5.symbol_info(symbol)
+        
     if not symbol_info:
         add_log("ERROR", f"executor_acc_{login}", f"Failed to get symbol info: {symbol}")
         mark_signal_executed(account_id, signal["id"], "failed", f"Symbol {symbol} info unavailable")
@@ -450,6 +463,72 @@ def execute_pending_signals(account):
             add_log("ERROR", f"executor_acc_{login}", f"Exception processing signal {sig['id']}: {e}")
             mark_signal_executed(account_id, sig["id"], "failed", str(e))
 
+def process_cancel_requests(account):
+    """
+    Checks the database for any pending trades with status='cancel_requested'
+    and cancels them in MT5.
+    """
+    account_id = account["id"]
+    login = int(account["login"])
+    
+    cancel_trades = get_cancel_requested_trades_for_account(account_id)
+    for trade in cancel_trades:
+        ticket = int(trade["ticket"])
+        symbol = resolve_symbol(trade["symbol"])
+        
+        # Check if the order is still active in MT5
+        orders = mt5.orders_get(ticket=ticket)
+        
+        if not orders:
+            # If not in active pending orders, it might have already triggered and become a position
+            positions = mt5.positions_get(ticket=ticket)
+            if positions:
+                update_trade_tp_status(
+                    trade_id=trade["id"],
+                    status="open"
+                )
+                add_log("WARNING", f"executor_acc_{login}", f"Cancel request ignored for ticket {ticket}. It already triggered and became an open position.")
+            else:
+                # Disappeared or already cancelled externally
+                update_trade_tp_status(
+                    trade_id=trade["id"],
+                    status="failed",
+                    error_msg="Cancelled externally"
+                )
+                add_log("INFO", f"executor_acc_{login}", f"Pending order ticket {ticket} was already removed or cancelled externally.")
+            continue
+            
+        # Select symbol
+        if not mt5.symbol_select(symbol, True):
+            add_log("ERROR", f"executor_acc_{login}", f"Failed to select symbol {symbol} for cancellation.")
+            continue
+            
+        # Send TRADE_ACTION_REMOVE request to MT5
+        request = {
+            "action": mt5.TRADE_ACTION_REMOVE,
+            "order": ticket
+        }
+        
+        add_log("INFO", f"executor_acc_{login}", f"Sending cancel request for pending order ticket {ticket} ({symbol})")
+        res = mt5.order_send(request)
+        
+        if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+            update_trade_tp_status(
+                trade_id=trade["id"],
+                status="failed",
+                error_msg="Cancelled by user"
+            )
+            add_log("INFO", f"executor_acc_{login}", f"Pending order ticket {ticket} successfully cancelled by user.")
+        else:
+            err_msg = res.comment if res else "unknown error"
+            add_log("ERROR", f"executor_acc_{login}", f"Failed to cancel pending order ticket {ticket} in MT5: {err_msg}")
+            # Revert to pending status so the user is informed
+            update_trade_tp_status(
+                trade_id=trade["id"],
+                status="pending",
+                error_msg=f"Cancel failed: {err_msg}"
+            )
+
 def monitor_open_trades(account):
     """
     Monitors active positions in MT5 to manage partial closes (TP1 & TP2)
@@ -672,7 +751,10 @@ def main():
             # 2. Check and execute signals
             execute_pending_signals(account)
             
-            # 3. Monitor active positions for partial closes
+            # 3. Process pending cancel requests
+            process_cancel_requests(account)
+            
+            # 4. Monitor active positions for partial closes
             monitor_open_trades(account)
             
             # Sleep to minimize CPU usage

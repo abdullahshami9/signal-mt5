@@ -347,6 +347,14 @@ def get_pending_trades_for_account(account_id):
     finally:
         conn.close()
 
+def get_cancel_requested_trades_for_account(account_id):
+    conn = get_db_connection()
+    try:
+        rows = conn.execute("SELECT * FROM trades WHERE account_id = ? AND status = 'cancel_requested'", (account_id,)).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
 def update_trade_tp_status(trade_id, tp1_hit=None, tp2_hit=None, tp3_hit=None, status=None, close_price=None, pnl=None, open_price=None, error_msg=None):
     conn = get_db_connection()
     try:

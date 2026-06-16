@@ -187,6 +187,10 @@
             <section class="lg:col-span-2 glass p-5 rounded-2xl space-y-4">
                 <h3 class="text-base font-bold tracking-tight text-white flex items-center justify-between">
                     <span>Open & Recent Trades</span>
+                    <button id="cancel-all-btn" onclick="cancelAllTrades(event)" style="display: none;"
+                        class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-lg text-xs font-semibold transition-all shadow-md">
+                        Cancel All Pending
+                    </button>
                 </h3>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-xs">
@@ -733,6 +737,40 @@
             }
         }
 
+        async function cancelTrade(tradeId, event) {
+            if (event) event.stopPropagation();
+            if (!confirm("Are you sure you want to cancel this pending order?")) return;
+            
+            try {
+                const res = await fetch(`${API_URL}/api/trades/${tradeId}/cancel`, {
+                    method: "POST"
+                });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.detail || "Failed to cancel trade");
+                
+                fetchData();
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            }
+        }
+
+        async function cancelAllTrades(event) {
+            if (event) event.stopPropagation();
+            if (!confirm("Are you sure you want to cancel all active pending orders?")) return;
+            
+            try {
+                const res = await fetch(`${API_URL}/api/trades/cancel_all`, {
+                    method: "POST"
+                });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.detail || "Failed to cancel all trades");
+                
+                fetchData();
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            }
+        }
+
         // Add Account
         async function submitAddAccount(e) {
             e.preventDefault();
@@ -1008,6 +1046,14 @@
                 const tradesRes = await fetch(`${API_URL}/api/trades`);
                 if (tradesRes.ok) {
                     const trades = await tradesRes.json();
+                    
+                    // Show/hide cancel all button based on pending orders
+                    const hasPending = trades.some(t => t.status === "pending");
+                    const cancelAllBtn = document.getElementById("cancel-all-btn");
+                    if (cancelAllBtn) {
+                        cancelAllBtn.style.display = hasPending ? "block" : "none";
+                    }
+
                     const tbody = document.getElementById("trades-table-body");
                     tbody.innerHTML = "";
 
@@ -1019,6 +1065,8 @@
                         const isBuy = t.action === "BUY";
                         const isClosed = t.status === "closed";
                         const isFailed = t.status === "failed";
+                        const isPending = t.status === "pending";
+                        const isCancelRequested = t.status === "cancel_requested";
                         const tr = document.createElement("tr");
                         tr.className = "border-b border-gray-950/40 hover:bg-gray-900/10 transition-colors";
 
@@ -1059,10 +1107,23 @@
                                 ${t.pnl >= 0 ? '+' : ''}$${t.pnl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
                             <td class="py-3.5">
-                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${isClosed ? 'bg-gray-800 text-gray-400' : isFailed ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}">
-                                    ${t.status}
-                                </span>
-                                ${t.error_msg ? `<p class="text-[9px] text-red-400 mt-1 max-w-[120px] overflow-hidden truncate" title="${t.error_msg}">${t.error_msg}</p>` : ''}
+                                <div class="flex flex-col items-start space-y-1.5">
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${
+                                        isClosed ? 'bg-gray-800 text-gray-400' : 
+                                        isFailed ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 
+                                        isPending ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
+                                        isCancelRequested ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20 animate-pulse' :
+                                        'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                    }">
+                                        ${t.status === 'cancel_requested' ? 'cancelling...' : t.status}
+                                    </span>
+                                    ${isPending ? `
+                                        <button onclick="cancelTrade(${t.id}, event)" class="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded text-[9px] font-bold transition-all shadow">
+                                            Cancel
+                                        </button>
+                                    ` : ''}
+                                    ${t.error_msg ? `<p class="text-[9px] text-red-400 mt-1 max-w-[120px] overflow-hidden truncate" title="${t.error_msg}">${t.error_msg}</p>` : ''}
+                                </div>
                             </td>
                         `;
                         tbody.appendChild(tr);
