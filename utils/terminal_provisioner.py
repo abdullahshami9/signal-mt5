@@ -1,5 +1,6 @@
 import os
 import shutil
+import hashlib
 
 def find_mt5_source_dir(user_specified_path=None):
     """
@@ -29,22 +30,42 @@ def find_mt5_source_dir(user_specified_path=None):
 
     return None
 
+def find_appdata_config_dir(terminal_exe_path):
+    """
+    Finds the corresponding AppData config folder where MT5 stores
+    broker configuration files (like servers.dat and certificates).
+    """
+    install_dir = os.path.dirname(os.path.abspath(terminal_exe_path))
+    # MT5 uses MD5 hash of uppercase terminal directory without trailing slash
+    path_bytes = install_dir.upper().encode('utf-16le')
+    hash_str = hashlib.md5(path_bytes).hexdigest().upper()
+    
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        appdata_dir = os.path.join(appdata, "MetaQuotes", "Terminal", hash_str, "config")
+        if os.path.exists(appdata_dir):
+            return appdata_dir
+    return None
+
 def provision_isolated_terminal(login, password, server, user_specified_path=None):
     """
     Creates an isolated MT5 directory under mt5_instances/acc_<login>,
-    copies terminal64.exe and other executables, and sets up startup.ini.
+    copies terminal64.exe, copies config files and certificates from AppData,
+    and sets up startup.ini for automated login.
     Returns the absolute path to terminal64.exe.
     """
     src_dir = find_mt5_source_dir(user_specified_path)
     if not src_dir:
         raise Exception("Could not locate a valid MetaTrader 5 installation containing terminal64.exe on your system.")
 
+    terminal_exe = os.path.join(src_dir, "terminal64.exe")
+
     # Get project root folder (parent of utils/)
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     dest_dir = os.path.join(project_root, "mt5_instances", f"acc_{login}")
     os.makedirs(dest_dir, exist_ok=True)
 
-    # Copy files
+    # 1. Copy executable files
     files_to_copy = ["terminal64.exe", "MetaEditor64.exe", "metatester64.exe", "Terminal.ico"]
     for file in files_to_copy:
         src_file = os.path.join(src_dir, file)
@@ -53,14 +74,44 @@ def provision_isolated_terminal(login, password, server, user_specified_path=Non
             try:
                 shutil.copy2(src_file, dest_file)
             except Exception as e:
-                # Log or print warning, continue with other files
                 print(f"Warning: Failed to copy {file} from {src_file} to {dest_file}: {e}")
 
-    # Set up Config/startup.ini
-    config_dir = os.path.join(dest_dir, "Config")
-    os.makedirs(config_dir, exist_ok=True)
+    # 2. Set up Config directory
+    dest_config_dir = os.path.join(dest_dir, "Config")
+    os.makedirs(dest_config_dir, exist_ok=True)
 
-    startup_ini_path = os.path.join(config_dir, "startup.ini")
+    # 3. Copy configuration files (servers.dat, accounts.dat, certificates)
+    appdata_config = find_appdata_config_dir(terminal_exe)
+    if appdata_config:
+        for item in os.listdir(appdata_config):
+            s_item = os.path.join(appdata_config, item)
+            d_item = os.path.join(dest_config_dir, item)
+            try:
+                if os.path.isdir(s_item):
+                    if not os.path.exists(d_item):
+                        shutil.copytree(s_item, d_item)
+                else:
+                    shutil.copy2(s_item, d_item)
+            except Exception as e:
+                print(f"Warning: Failed to copy config item {item}: {e}")
+    else:
+        # Fallback to copy from local Config directory if it exists
+        local_config = os.path.join(src_dir, "Config")
+        if os.path.exists(local_config):
+            for item in os.listdir(local_config):
+                s_item = os.path.join(local_config, item)
+                d_item = os.path.join(dest_config_dir, item)
+                try:
+                    if os.path.isdir(s_item):
+                        if not os.path.exists(d_item):
+                            shutil.copytree(s_item, d_item)
+                    else:
+                        shutil.copy2(s_item, d_item)
+                except Exception as e:
+                    print(f"Warning: Failed to copy config item {item} from local Config: {e}")
+
+    # 4. Create startup.ini for auto-login
+    startup_ini_path = os.path.join(dest_config_dir, "startup.ini")
     startup_content = f"""[Common]
 Login={login}
 Password={password}
@@ -93,9 +144,16 @@ def sync_and_provision_all_accounts():
             target_path = os.path.abspath(os.path.join(
                 os.path.dirname(__file__), "..", "mt5_instances", f"acc_{login}", "terminal64.exe"
             ))
+            
+            # Re-provision if terminal64.exe is missing OR if Config/servers.dat is missing
+            servers_dat_path = os.path.join(os.path.dirname(target_path), "Config", "servers.dat")
+            should_provision = (
+                not os.path.exists(target_path) or 
+                not os.path.exists(servers_dat_path) or 
+                os.path.abspath(current_path) != target_path
+            )
 
-            # If the target file does not exist, or the DB path is not set to the target path
-            if not os.path.exists(target_path) or os.path.abspath(current_path) != target_path:
+            if should_provision:
                 try:
                     add_log("INFO", "system", f"Provisioning isolated MT5 terminal for account {login}...")
                     new_path = provision_isolated_terminal(login, password, server, current_path)
