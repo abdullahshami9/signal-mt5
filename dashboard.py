@@ -54,6 +54,16 @@ class TelegramLogin(BaseModel):
     code: str
     password: Optional[str] = None # For 2FA if needed
 
+class SignalCreate(BaseModel):
+    action: str
+    symbol: str
+    entry_min: Optional[float] = None
+    entry_max: Optional[float] = None
+    sl: Optional[float] = None
+    tp1: Optional[float] = None
+    tp2: Optional[float] = None
+    tp3: Optional[float] = None
+
 @app.get("/", response_class=HTMLResponse)
 async def get_dashboard(request: Request):
     """
@@ -177,6 +187,55 @@ async def api_get_trades():
 @app.get("/api/signals")
 async def api_get_signals():
     return get_recent_signals(20)
+
+@app.post("/api/signals")
+async def api_add_manual_signal(sig: SignalCreate):
+    try:
+        action = sig.action.upper().strip()
+        if action not in ["BUY", "SELL", "CLOSE", "MODIFY"]:
+            raise HTTPException(status_code=400, detail="Invalid action type")
+            
+        symbol = sig.symbol.upper().strip()
+        if not symbol:
+            raise HTTPException(status_code=400, detail="Symbol is required")
+            
+        # Create a raw_text representation for display in the log
+        parts = [f"MANUAL: {action} {symbol}"]
+        if sig.entry_min is not None and sig.entry_max is not None:
+            if sig.entry_min == sig.entry_max:
+                parts.append(f"price {sig.entry_min}")
+            else:
+                parts.append(f"price ({sig.entry_min}-{sig.entry_max})")
+        if sig.sl is not None:
+            parts.append(f"SL {sig.sl}")
+        if sig.tp1 is not None:
+            parts.append(f"TP1 {sig.tp1}")
+        if sig.tp2 is not None:
+            parts.append(f"TP2 {sig.tp2}")
+        if sig.tp3 is not None:
+            parts.append(f"TP3 {sig.tp3}")
+            
+        raw_text = " ".join(parts)
+        
+        # Insert signal into DB
+        signal_id = add_signal(
+            telegram_msg_id=8888, # 8888 indicates a manual signal from the dashboard
+            channel_id=0,
+            raw_text=raw_text,
+            action=action,
+            symbol=symbol,
+            sl=sig.sl,
+            tp1=sig.tp1,
+            tp2=sig.tp2,
+            tp3=sig.tp3,
+            entry_min=sig.entry_min,
+            entry_max=sig.entry_max
+        )
+        
+        add_log("INFO", "dashboard", f"Manual signal {signal_id} ({action} {symbol}) added from dashboard UI")
+        return {"status": "success", "message": "Manual signal created successfully", "signal_id": signal_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/logs")
 async def api_get_logs():

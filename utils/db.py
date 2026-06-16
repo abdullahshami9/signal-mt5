@@ -310,22 +310,22 @@ def mark_signal_executed(account_id, signal_id, status, error_msg=None):
         conn.close()
 
 # Trades management
-def add_trade(account_id, signal_id, ticket, symbol, action, volume, sl, tp1, tp2, tp3, tp1_lots, tp2_lots, tp3_lots, open_price):
+def add_trade(account_id, signal_id, ticket, symbol, action, volume, sl, tp1, tp2, tp3, tp1_lots, tp2_lots, tp3_lots, open_price, status='open'):
     conn = get_db_connection()
     try:
         conn.execute("""
         INSERT INTO trades (
             account_id, signal_id, ticket, symbol, action, volume, sl, tp1, tp2, tp3,
             tp1_lots, tp2_lots, tp3_lots, open_price, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             account_id, signal_id, ticket, symbol, action, float(volume),
             float(sl) if sl else None, float(tp1) if tp1 else None,
             float(tp2) if tp2 else None, float(tp3) if tp3 else None,
-            float(tp1_lots), float(tp2_lots), float(tp3_lots), float(open_price)
+            float(tp1_lots), float(tp2_lots), float(tp3_lots), float(open_price), status
         ))
         conn.commit()
-        add_log("INFO", f"executor_acc_{account_id}", f"Recorded open trade ticket {ticket} ({symbol} {action}) in DB")
+        add_log("INFO", f"executor_acc_{account_id}", f"Recorded {status} trade ticket {ticket} ({symbol} {action}) in DB")
     except Exception as e:
         add_log("ERROR", f"executor_acc_{account_id}", f"Failed to record trade ticket {ticket} in DB: {e}")
     finally:
@@ -339,7 +339,15 @@ def get_open_trades_for_account(account_id):
     finally:
         conn.close()
 
-def update_trade_tp_status(trade_id, tp1_hit=None, tp2_hit=None, tp3_hit=None, status=None, close_price=None, pnl=None):
+def get_pending_trades_for_account(account_id):
+    conn = get_db_connection()
+    try:
+        rows = conn.execute("SELECT * FROM trades WHERE account_id = ? AND status = 'pending'", (account_id,)).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+def update_trade_tp_status(trade_id, tp1_hit=None, tp2_hit=None, tp3_hit=None, status=None, close_price=None, pnl=None, open_price=None, error_msg=None):
     conn = get_db_connection()
     try:
         updates = []
@@ -362,6 +370,12 @@ def update_trade_tp_status(trade_id, tp1_hit=None, tp2_hit=None, tp3_hit=None, s
         if pnl is not None:
             updates.append("pnl = ?")
             params.append(float(pnl))
+        if open_price is not None:
+            updates.append("open_price = ?")
+            params.append(float(open_price))
+        if error_msg is not None:
+            updates.append("error_msg = ?")
+            params.append(error_msg)
             
         updates.append("last_updated = CURRENT_TIMESTAMP")
         

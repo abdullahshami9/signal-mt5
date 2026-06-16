@@ -9,7 +9,7 @@ import MetaTrader5 as mt5
 from utils.db import (
     get_account, update_account_status, get_pending_signals_for_account,
     mark_signal_executed, add_trade, get_open_trades_for_account,
-    update_trade_tp_status, add_log
+    update_trade_tp_status, add_log, get_pending_trades_for_account
 )
 from utils.mt5_helpers import calculate_lot_size, divide_lots, get_filling_mode
 
@@ -145,6 +145,7 @@ def resolve_symbol(symbol):
 def process_trade_signal(account, signal):
     """
     Executes a BUY/SELL signal with 1% risk-based lot sizing.
+    Supports pending orders if target price range is specified and current price is outside.
     """
     login = int(account["login"])
     account_id = account["id"]
@@ -181,26 +182,29 @@ def process_trade_signal(account, signal):
         
     entry_price = tick.ask if action == "BUY" else tick.bid
     
-    # Enforce entry price range validation
+    # Check if pending order is required
     entry_min = signal.get("entry_min")
     entry_max = signal.get("entry_max")
     
+    is_pending = False
+    pending_type = None
+    target_price = entry_price
+    
     if entry_min is not None and entry_max is not None:
-        if entry_min == entry_max:
-            point = symbol_info.point if symbol_info.point > 0 else 0.00001
-            tolerance = 100 * point
-            allowed_min = entry_min - tolerance
-            allowed_max = entry_max + tolerance
-        else:
-            allowed_min = entry_min
-            allowed_max = entry_max
-            
-        if not (allowed_min <= entry_price <= allowed_max):
-            msg = f"Skipped: Current price ({entry_price}) outside range ({allowed_min} - {allowed_max})"
-            add_log("WARNING", f"executor_acc_{login}", f"Signal {signal['id']} skipped. {msg}")
-            mark_signal_executed(account_id, signal["id"], "skipped", msg)
-            return
-            
+        if not (entry_min <= entry_price <= entry_max):
+            is_pending = True
+            target_price = (entry_min + entry_max) / 2.0
+            if action == "BUY":
+                if entry_price > target_price:
+                    pending_type = mt5.ORDER_TYPE_BUY_LIMIT
+                else:
+                    pending_type = mt5.ORDER_TYPE_BUY_STOP
+            else: # SELL
+                if entry_price < target_price:
+                    pending_type = mt5.ORDER_TYPE_SELL_LIMIT
+                else:
+                    pending_type = mt5.ORDER_TYPE_SELL_STOP
+                    
     acc_info = mt5.account_info()
     if not acc_info:
         add_log("ERROR", f"executor_acc_{login}", "Failed to retrieve account info for lot calculation")
@@ -213,7 +217,7 @@ def process_trade_signal(account, signal):
         tp1_lots, tp2_lots, tp3_lots = 0.01, 0.0, 0.0
     else:
         risk_pct = account.get("risk_pct", 1.0)
-        total_lots = calculate_lot_size(acc_info.balance, risk_pct, symbol_info, entry_price, sl)
+        total_lots = calculate_lot_size(acc_info.balance, risk_pct, symbol_info, target_price, sl)
         
         if not total_lots or total_lots <= 0:
             add_log("ERROR", f"executor_acc_{login}", f"Lot calculation failed for {symbol}. Raw value too small or invalid parameters.")
@@ -233,28 +237,46 @@ def process_trade_signal(account, signal):
         broker_tp = signal["tp1"]
         
     # Construct MT5 Trade Request
-    order_type = mt5.ORDER_TYPE_BUY if action == "BUY" else mt5.ORDER_TYPE_SELL
     filling_mode = get_filling_mode(symbol_info)
     
-    request = {
-        "action": mt5.TRADE_ACTION_DEAL,
-        "symbol": symbol,
-        "volume": total_lots,
-        "type": order_type,
-        "price": entry_price,
-        "sl": float(sl) if sl else 0.0,
-        "deviation": 20,
-        "magic": 100000 + account_id,
-        "comment": f"Antigravity Copier S{signal['id']}",
-        "type_time": mt5.ORDER_TIME_GTC,
-        "type_filling": filling_mode
-    }
-    
+    if is_pending:
+        request = {
+            "action": mt5.TRADE_ACTION_PENDING,
+            "symbol": symbol,
+            "volume": total_lots,
+            "type": pending_type,
+            "price": float(target_price),
+            "sl": float(sl) if sl else 0.0,
+            "deviation": 20,
+            "magic": 100000 + account_id,
+            "comment": f"Antigravity Copier P{signal['id']}",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": filling_mode
+        }
+    else:
+        order_type = mt5.ORDER_TYPE_BUY if action == "BUY" else mt5.ORDER_TYPE_SELL
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "volume": total_lots,
+            "type": order_type,
+            "price": entry_price,
+            "sl": float(sl) if sl else 0.0,
+            "deviation": 20,
+            "magic": 100000 + account_id,
+            "comment": f"Antigravity Copier S{signal['id']}",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": filling_mode
+        }
+        
     if broker_tp:
         request["tp"] = float(broker_tp)
         
-    add_log("INFO", f"executor_acc_{login}", f"Sending order: {action} {total_lots} {symbol} SL: {sl} TP: {broker_tp}")
-    
+    if is_pending:
+        add_log("INFO", f"executor_acc_{login}", f"Sending pending order: {action} {total_lots} {symbol} target: {target_price} SL: {sl} TP: {broker_tp}")
+    else:
+        add_log("INFO", f"executor_acc_{login}", f"Sending order: {action} {total_lots} {symbol} SL: {sl} TP: {broker_tp}")
+        
     result = mt5.order_send(request)
     
     if not result or result.retcode != mt5.TRADE_RETCODE_DONE:
@@ -263,26 +285,47 @@ def process_trade_signal(account, signal):
         mark_signal_executed(account_id, signal["id"], "failed", err_msg)
     else:
         ticket = result.order
-        add_log("INFO", f"executor_acc_{login}", f"Order execution successful. Ticket: {ticket}")
-        
-        # Save open trade in SQLite
-        add_trade(
-            account_id=account_id,
-            signal_id=signal["id"],
-            ticket=ticket,
-            symbol=symbol,
-            action=action,
-            volume=total_lots,
-            sl=sl,
-            tp1=signal["tp1"],
-            tp2=signal["tp2"],
-            tp3=signal["tp3"],
-            tp1_lots=tp1_lots,
-            tp2_lots=tp2_lots,
-            tp3_lots=tp3_lots,
-            open_price=result.price
-        )
-        
+        if is_pending:
+            add_log("INFO", f"executor_acc_{login}", f"Pending order placement successful. Ticket: {ticket}")
+            # Save pending trade in SQLite
+            add_trade(
+                account_id=account_id,
+                signal_id=signal["id"],
+                ticket=ticket,
+                symbol=symbol,
+                action=action,
+                volume=total_lots,
+                sl=sl,
+                tp1=signal["tp1"],
+                tp2=signal["tp2"],
+                tp3=signal["tp3"],
+                tp1_lots=tp1_lots,
+                tp2_lots=tp2_lots,
+                tp3_lots=tp3_lots,
+                open_price=target_price,
+                status='pending'
+            )
+        else:
+            add_log("INFO", f"executor_acc_{login}", f"Order execution successful. Ticket: {ticket}")
+            # Save open trade in SQLite
+            add_trade(
+                account_id=account_id,
+                signal_id=signal["id"],
+                ticket=ticket,
+                symbol=symbol,
+                action=action,
+                volume=total_lots,
+                sl=sl,
+                tp1=signal["tp1"],
+                tp2=signal["tp2"],
+                tp3=signal["tp3"],
+                tp1_lots=tp1_lots,
+                tp2_lots=tp2_lots,
+                tp3_lots=tp3_lots,
+                open_price=result.price,
+                status='open'
+            )
+            
         mark_signal_executed(account_id, signal["id"], "executed")
 
 def process_close_signal(account, signal):
@@ -410,11 +453,59 @@ def monitor_open_trades(account):
     """
     Monitors active positions in MT5 to manage partial closes (TP1 & TP2)
     and updates trade status when hit by SL, TP3, or closed manually.
+    Also monitors pending orders and updates status to open when triggered,
+    or failed if canceled/expired.
     """
     account_id = account["id"]
     login = int(account["login"])
-    open_trades = get_open_trades_for_account(account_id)
     
+    # Check pending trades
+    try:
+        pending_trades = get_pending_trades_for_account(account_id)
+        for trade in pending_trades:
+            ticket = trade["ticket"]
+            
+            # Check if pending order is still active
+            orders = mt5.orders_get(ticket=ticket)
+            if orders:
+                continue
+                
+            # If not in active orders, check if it became an active position
+            positions = mt5.positions_get(ticket=ticket)
+            if positions:
+                pos = positions[0]
+                update_trade_tp_status(
+                    trade_id=trade["id"],
+                    status="open",
+                    open_price=pos.price_open
+                )
+                add_log("INFO", f"executor_acc_{login}", f"Pending order ticket {ticket} triggered. Now open at {pos.price_open}")
+                continue
+                
+            # Check if order was canceled/expired in history
+            hist_orders = mt5.history_orders_get(ticket=ticket)
+            if hist_orders:
+                order_info = hist_orders[0]
+                if order_info.state in [mt5.ORDER_STATE_CANCELED, mt5.ORDER_STATE_EXPIRED, mt5.ORDER_STATE_REJECTED]:
+                    update_trade_tp_status(
+                        trade_id=trade["id"],
+                        status="failed",
+                        error_msg=f"Order state in history: {order_info.state}"
+                    )
+                    add_log("INFO", f"executor_acc_{login}", f"Pending order ticket {ticket} was canceled, expired, or rejected.")
+            else:
+                # Fallback if order disappeared
+                update_trade_tp_status(
+                    trade_id=trade["id"],
+                    status="failed",
+                    error_msg="Pending order disappeared"
+                )
+                add_log("WARNING", f"executor_acc_{login}", f"Pending order ticket {ticket} disappeared from active and history list.")
+    except Exception as e:
+        add_log("ERROR", f"executor_acc_{login}", f"Error monitoring pending trades: {e}")
+        
+    # Monitor open trades
+    open_trades = get_open_trades_for_account(account_id)
     if not open_trades:
         return
         
