@@ -36,22 +36,52 @@ def connect_mt5(account):
 
     add_log("INFO", f"executor_acc_{login}", "Initializing MT5 connection...")
     
-    # On both Windows and Linux, we run in portable mode to support completely isolated instances.
-    init_params = {}
-    if path:
-        init_params["path"] = path
+    # Check if the terminal process is already running
+    is_running = False
+    try:
+        for proc in psutil.process_iter(['pid', 'name', 'exe']):
+            try:
+                if proc.info['exe'] and os.path.abspath(proc.info['exe']) == os.path.abspath(path):
+                    is_running = True
+                    break
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+    except Exception as e:
+        add_log("WARNING", f"executor_acc_{login}", f"Error checking process status: {e}")
         
-    init_params["portable"] = True
-        
-    # Pass credentials directly inside initialize to auto-login and bypass wizard
-    init_params["login"] = login
-    init_params["password"] = password
-    init_params["server"] = server
-    init_params["timeout"] = 15000 # 15 seconds to connect
+    if not is_running:
+        startup_config = os.path.abspath(os.path.join(os.path.dirname(path), "Config", "startup.ini"))
+        add_log("INFO", f"executor_acc_{login}", "Terminal is not running. Launching isolated instance...")
+        try:
+            subprocess.Popen([path, "/portable", f"/config:{startup_config}"])
+            # Give it some initial time to boot up
+            time.sleep(5)
+        except Exception as e:
+            add_log("ERROR", f"executor_acc_{login}", f"Failed to launch terminal process: {e}")
+            
+    # Call mt5.initialize to connect to the running terminal with retry loop
+    init_params = {
+        "path": path,
+        "portable": True,
+        "login": login,
+        "password": password,
+        "server": server,
+        "timeout": 15000
+    }
     
-    if not mt5.initialize(**init_params):
+    connected = False
+    for attempt in range(1, 16): # Try 15 times (up to 75 seconds total)
+        add_log("INFO", f"executor_acc_{login}", f"Attempting MT5 connection (Attempt {attempt}/15)...")
+        if mt5.initialize(**init_params):
+            connected = True
+            break
         err = mt5.last_error()
-        add_log("ERROR", f"executor_acc_{login}", f"MT5 initialize failed: {err}")
+        add_log("WARNING", f"executor_acc_{login}", f"Connection attempt {attempt} failed: {err}. Retrying in 5s...")
+        time.sleep(5)
+        
+    if not connected:
+        err = mt5.last_error()
+        add_log("ERROR", f"executor_acc_{login}", f"MT5 initialize failed after 15 attempts: {err}")
         update_account_status(login, 0, 0, "disconnected", f"Init failed: {err}")
         return False
         
