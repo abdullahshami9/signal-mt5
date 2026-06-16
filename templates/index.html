@@ -1,13 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Antigravity MT5 Copier</title>
+    <title>Trading.ai</title>
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -26,47 +29,58 @@
             background-color: #0b0f19;
             color: #f3f4f6;
         }
+
         .glass {
             background: rgba(17, 24, 39, 0.7);
             backdrop-filter: blur(12px);
             border: 1px rgba(255, 255, 255, 0.08) solid;
         }
+
         .glow-green {
             box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
         }
+
         .glow-indigo {
             box-shadow: 0 0 15px rgba(99, 102, 241, 0.2);
         }
+
         /* Custom scrollbar */
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
         }
+
         ::-webkit-scrollbar-track {
             background: #0b0f19;
         }
+
         ::-webkit-scrollbar-thumb {
             background: #1f2937;
             border-radius: 3px;
         }
+
         ::-webkit-scrollbar-thumb:hover {
             background: #374151;
         }
     </style>
 </head>
+
 <body class="min-h-screen flex flex-col antialiased">
     <!-- Navbar -->
     <header class="glass sticky top-0 z-40 border-b border-gray-800 px-6 py-4 flex items-center justify-between">
         <div class="flex items-center space-x-3">
-            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center font-bold text-lg text-white shadow-lg glow-indigo">
-                AG
+            <div
+                class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center font-bold text-lg text-white shadow-lg glow-indigo">
+                T.ai
             </div>
             <div>
-                <h1 class="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-gray-100 to-gray-400 bg-clip-text text-transparent">Antigravity MT5 Copier</h1>
+                <h1
+                    class="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-gray-100 to-gray-400 bg-clip-text text-transparent">
+                    Trading.ai</h1>
                 <p class="text-xs text-gray-500 font-medium">Telegram-to-MT5 Real-Time Copier</p>
             </div>
         </div>
-        
+
         <div class="flex items-center space-x-6">
             <!-- Connection Indicators -->
             <div class="flex items-center space-x-4 text-xs font-semibold">
@@ -74,14 +88,17 @@
                     <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
                     <span class="text-gray-400">Server: <span class="text-emerald-500">Online</span></span>
                 </div>
-                
-                <div class="flex items-center space-x-2 bg-gray-950/40 px-3 py-1.5 rounded-full border border-gray-800" id="telegram-indicator-container">
+
+                <div class="flex items-center space-x-2 bg-gray-950/40 px-3 py-1.5 rounded-full border border-gray-800"
+                    id="telegram-indicator-container">
                     <span class="w-2.5 h-2.5 rounded-full bg-red-500" id="telegram-dot"></span>
-                    <span class="text-gray-400">Telegram: <span id="telegram-status-text" class="text-red-500 font-bold">Disconnected</span></span>
+                    <span class="text-gray-400">Telegram: <span id="telegram-status-text"
+                            class="text-red-500 font-bold">Disconnected</span></span>
                 </div>
             </div>
-            
-            <button onclick="openSettingsModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition-all shadow-md hover:scale-[1.02] active:scale-[0.98]">
+
+            <button onclick="openSettingsModal()"
+                class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition-all shadow-md hover:scale-[1.02] active:scale-[0.98]">
                 Setup Telegram
             </button>
         </div>
@@ -94,10 +111,11 @@
             <!-- Aggregated Balance -->
             <div class="glass p-5 rounded-2xl flex flex-col justify-between">
                 <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Aggregate Balance</span>
-                <span class="text-3xl font-extrabold tracking-tight mt-2 text-white" id="stat-total-balance">$0.00</span>
+                <span class="text-3xl font-extrabold tracking-tight mt-2 text-white"
+                    id="stat-total-balance">$0.00</span>
                 <span class="text-[10px] text-gray-500 mt-1 font-medium">Sum of all connected accounts</span>
             </div>
-            
+
             <!-- Aggregated Equity -->
             <div class="glass p-5 rounded-2xl flex flex-col justify-between">
                 <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Aggregate Equity</span>
@@ -122,7 +140,8 @@
                             <span id="vps-cpu-txt">0%</span>
                         </div>
                         <div class="w-full bg-gray-800 rounded-full h-1.5">
-                            <div class="bg-indigo-500 h-1.5 rounded-full transition-all duration-500" id="vps-cpu-bar" style="width: 0%"></div>
+                            <div class="bg-indigo-500 h-1.5 rounded-full transition-all duration-500" id="vps-cpu-bar"
+                                style="width: 0%"></div>
                         </div>
                     </div>
                     <div>
@@ -131,7 +150,8 @@
                             <span id="vps-ram-txt">0%</span>
                         </div>
                         <div class="w-full bg-gray-800 rounded-full h-1.5">
-                            <div class="bg-violet-500 h-1.5 rounded-full transition-all duration-500" id="vps-ram-bar" style="width: 0%"></div>
+                            <div class="bg-violet-500 h-1.5 rounded-full transition-all duration-500" id="vps-ram-bar"
+                                style="width: 0%"></div>
                         </div>
                     </div>
                 </div>
@@ -143,13 +163,15 @@
             <div class="flex justify-between items-center">
                 <h2 class="text-lg font-bold tracking-tight text-white flex items-center space-x-2">
                     <span>MetaTrader 5 Accounts</span>
-                    <span class="bg-gray-800 text-gray-400 text-xs px-2 py-0.5 rounded-full" id="accounts-count">0</span>
+                    <span class="bg-gray-800 text-gray-400 text-xs px-2 py-0.5 rounded-full"
+                        id="accounts-count">0</span>
                 </h2>
-                <button onclick="openAccountModal()" class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 rounded-lg text-xs font-semibold transition-all">
+                <button onclick="openAccountModal()"
+                    class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 rounded-lg text-xs font-semibold transition-all">
                     + Add MT5 Account
                 </button>
             </div>
-            
+
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6" id="accounts-grid">
                 <!-- Account cards injected here -->
             </div>
@@ -197,7 +219,8 @@
                 <h3 class="text-base font-bold tracking-tight text-white">System Console Logs</h3>
                 <span class="text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Live logs database</span>
             </div>
-            <div class="bg-black/90 p-4 rounded-xl border border-gray-800 font-mono text-xs text-emerald-400 max-h-[220px] overflow-y-auto space-y-1" id="console-logs">
+            <div class="bg-black/90 p-4 rounded-xl border border-gray-800 font-mono text-xs text-emerald-400 max-h-[220px] overflow-y-auto space-y-1"
+                id="console-logs">
                 <!-- Log lines injected here -->
             </div>
         </section>
@@ -209,7 +232,8 @@
     </footer>
 
     <!-- ADD ACCOUNT MODAL -->
-    <div id="account-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div id="account-modal"
+        class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
         <div class="glass w-full max-w-md p-6 rounded-2xl space-y-4">
             <div class="flex justify-between items-center border-b border-gray-800 pb-3">
                 <h3 class="text-lg font-bold text-white">Add MT5 Account</h3>
@@ -218,51 +242,63 @@
             <form id="add-account-form" onsubmit="submitAddAccount(event)" class="space-y-3 text-sm">
                 <div>
                     <label class="block text-xs font-bold text-gray-400 mb-1">Account Name (Optional)</label>
-                    <input type="text" id="acc-name" placeholder="e.g. Master Account" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                    <input type="text" id="acc-name" placeholder="e.g. Master Account"
+                        class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-400 mb-1">MT5 Login ID *</label>
-                    <input type="number" id="acc-login" required class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                    <input type="number" id="acc-login" required
+                        class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-400 mb-1">MT5 Password *</label>
-                    <input type="password" id="acc-password" required class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                    <input type="password" id="acc-password" required
+                        class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-400 mb-1">MT5 Broker Server *</label>
-                    <input type="text" id="acc-server" required placeholder="e.g. Pepperstone-MT5-Demo" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                    <input type="text" id="acc-server" required placeholder="e.g. Pepperstone-MT5-Demo"
+                        class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-gray-400 mb-1">Terminal executable Path (Optional)</label>
-                    <input type="text" id="acc-path" placeholder="e.g. C:\Program Files\MetaTrader 5\terminal64.exe" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
-                    <p class="text-[10px] text-gray-500 mt-1">Leave empty to auto-copy terminal from standard path. If using a custom broker terminal, provide the path to its terminal64.exe.</p>
+                    <label class="block text-xs font-bold text-gray-400 mb-1">Terminal executable Path
+                        (Optional)</label>
+                    <input type="text" id="acc-path" placeholder="e.g. C:\Program Files\MetaTrader 5\terminal64.exe"
+                        class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                    <p class="text-[10px] text-gray-500 mt-1">Leave empty to auto-copy terminal from standard path. If
+                        using a custom broker terminal, provide the path to its terminal64.exe.</p>
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-bold text-gray-400 mb-1">Risk Percentage (%) *</label>
-                        <input type="number" step="0.1" id="acc-risk" value="1.0" required class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                        <input type="number" step="0.1" id="acc-risk" value="1.0" required
+                            class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-gray-400 mb-1">Payment Date (Optional)</label>
-                        <input type="date" id="acc-payment-date" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                        <input type="date" id="acc-payment-date"
+                            class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
                     </div>
                 </div>
                 <div class="pt-3 flex justify-end space-x-3">
-                    <button type="button" onclick="closeAccountModal()" class="px-4 py-2 bg-gray-800 text-gray-300 rounded-xl hover:bg-gray-700">Cancel</button>
-                    <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl">Save Account</button>
+                    <button type="button" onclick="closeAccountModal()"
+                        class="px-4 py-2 bg-gray-800 text-gray-300 rounded-xl hover:bg-gray-700">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl">Save
+                        Account</button>
                 </div>
             </form>
         </div>
     </div>
 
     <!-- SETTINGS & TELEGRAM AUTH MODAL -->
-    <div id="settings-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div id="settings-modal"
+        class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
         <div class="glass w-full max-w-lg p-6 rounded-2xl space-y-4">
             <div class="flex justify-between items-center border-b border-gray-800 pb-3">
                 <h3 class="text-lg font-bold text-white">Setup Telegram API & Auth</h3>
                 <button onclick="closeSettingsModal()" class="text-gray-500 hover:text-white">&times;</button>
             </div>
-            
+
             <div class="space-y-4">
                 <!-- Config Section -->
                 <form id="settings-form" onsubmit="submitSaveSettings(event)" class="space-y-3 text-sm">
@@ -270,55 +306,75 @@
                     <div class="grid grid-cols-2 gap-3">
                         <div>
                             <label class="block text-xs font-bold text-gray-400 mb-1">API ID (my.telegram.org)</label>
-                            <input type="text" id="set-api-id" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                            <input type="text" id="set-api-id"
+                                class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-gray-400 mb-1">API Hash</label>
-                            <input type="text" id="set-api-hash" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                            <input type="text" id="set-api-hash"
+                                class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
                         </div>
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-gray-400 mb-1">Phone Number (with Country Code)</label>
-                        <input type="text" id="set-phone" placeholder="e.g. +923001234567" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                        <label class="block text-xs font-bold text-gray-400 mb-1">Phone Number (with Country
+                            Code)</label>
+                        <input type="text" id="set-phone" placeholder="e.g. +923001234567"
+                            class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-gray-400 mb-1">Monitored Channel Username / IDs (Comma separated)</label>
-                        <input type="text" id="set-channels" placeholder="e.g. forex_signals_group, -1001234567890" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
-                        <p class="text-[10px] text-gray-500 mt-1">Leave empty to monitor all channels/chats you are joined in.</p>
+                        <label class="block text-xs font-bold text-gray-400 mb-1">Monitored Channel Username / IDs
+                            (Comma separated)</label>
+                        <input type="text" id="set-channels" placeholder="e.g. forex_signals_group, -1001234567890"
+                            class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                        <p class="text-[10px] text-gray-500 mt-1">Leave empty to monitor all channels/chats you are
+                            joined in.</p>
                     </div>
                     <div class="flex justify-end">
-                        <button type="submit" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 rounded-xl">Save Config</button>
+                        <button type="submit"
+                            class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 rounded-xl">Save
+                            Config</button>
                     </div>
                 </form>
-                
+
                 <hr class="border-gray-800">
-                
+
                 <!-- Authentication Flow Section -->
                 <div class="space-y-3 text-sm">
-                    <h4 class="text-xs font-bold text-indigo-400 uppercase tracking-wider">2. Initialize Telegram Session</h4>
-                    <p class="text-[10px] text-gray-400 leading-relaxed">Ensure you clicked 'Save Config' above first. Clicking 'Send Code' will initialize a Telegram client connection and send an SMS/Telegram login code.</p>
-                    
+                    <h4 class="text-xs font-bold text-indigo-400 uppercase tracking-wider">2. Initialize Telegram
+                        Session</h4>
+                    <p class="text-[10px] text-gray-400 leading-relaxed">Ensure you clicked 'Save Config' above first.
+                        Clicking 'Send Code' will initialize a Telegram client connection and send an SMS/Telegram login
+                        code.</p>
+
                     <div class="flex space-x-3 items-end">
                         <div class="flex-grow">
                             <label class="block text-xs font-bold text-gray-400 mb-1">Verification Phone Number</label>
-                            <input type="text" id="auth-phone" placeholder="+923001234567" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                            <input type="text" id="auth-phone" placeholder="+923001234567"
+                                class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
                         </div>
-                        <button onclick="sendAuthCode()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-all">Send Code</button>
+                        <button onclick="sendAuthCode()"
+                            class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-all">Send
+                            Code</button>
                     </div>
-                    
+
                     <div id="auth-code-container" class="hidden space-y-3">
                         <div class="grid grid-cols-2 gap-3">
                             <div>
                                 <label class="block text-xs font-bold text-gray-400 mb-1">Login Code</label>
-                                <input type="text" id="auth-code" placeholder="12345" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                                <input type="text" id="auth-code" placeholder="12345"
+                                    class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
                             </div>
                             <div>
-                                <label class="block text-xs font-bold text-gray-400 mb-1">2FA Password (Optional)</label>
-                                <input type="password" id="auth-password" placeholder="Only if enabled" class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
+                                <label class="block text-xs font-bold text-gray-400 mb-1">2FA Password
+                                    (Optional)</label>
+                                <input type="password" id="auth-password" placeholder="Only if enabled"
+                                    class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
                             </div>
                         </div>
                         <div class="flex justify-end">
-                            <button onclick="submitAuthCode()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium transition-all">Confirm Code</button>
+                            <button onclick="submitAuthCode()"
+                                class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium transition-all">Confirm
+                                Code</button>
                         </div>
                     </div>
                 </div>
@@ -366,7 +422,7 @@
                 });
                 const result = await res.json();
                 if (!res.ok) throw new Error(result.detail || "Failed to add account");
-                
+
                 alert("Account added successfully!");
                 closeAccountModal();
                 document.getElementById("add-account-form").reset();
@@ -425,8 +481,8 @@
             e.preventDefault();
             const rawChannels = document.getElementById("set-channels").value;
             const channelsList = rawChannels.split(",")
-                                           .map(c => c.trim())
-                                           .filter(c => c.length > 0);
+                .map(c => c.trim())
+                .filter(c => c.length > 0);
 
             const data = {
                 api_id: document.getElementById("set-api-id").value,
@@ -465,7 +521,7 @@
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || "Failed to send code");
-                
+
                 alert("Verification code has been sent to your Telegram/Phone.");
                 document.getElementById("auth-code-container").classList.remove("hidden");
             } catch (err) {
@@ -495,14 +551,14 @@
                     })
                 });
                 const data = await res.json();
-                
+
                 if (res.status === 202 && data.status === "2fa_required") {
                     alert("Two-Factor Authentication is enabled on this account. Please enter your 2FA password in the input field and click confirm again.");
                     return;
                 }
-                
+
                 if (!res.ok) throw new Error(data.detail || "Failed to log in");
-                
+
                 alert("Telegram connection established successfully!");
                 document.getElementById("auth-code-container").classList.add("hidden");
                 closeSettingsModal();
@@ -523,10 +579,10 @@
                     document.getElementById("stat-total-equity").innerText = `$${stats.total_equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                     document.getElementById("stat-open-trades").innerText = stats.open_trades;
                     document.getElementById("accounts-count").innerText = stats.accounts_count;
-                    
+
                     document.getElementById("vps-cpu-txt").innerText = `${stats.vps_cpu.toFixed(1)}%`;
                     document.getElementById("vps-cpu-bar").style.width = `${stats.vps_cpu}%`;
-                    
+
                     document.getElementById("vps-ram-txt").innerText = `${stats.vps_ram.toFixed(1)}%`;
                     document.getElementById("vps-ram-bar").style.width = `${stats.vps_ram}%`;
                 }
@@ -537,11 +593,11 @@
                     const accounts = await accsRes.json();
                     const grid = document.getElementById("accounts-grid");
                     grid.innerHTML = "";
-                    
+
                     if (accounts.length === 0) {
                         grid.innerHTML = `<div class="col-span-full py-8 text-center text-gray-500 font-medium border border-dashed border-gray-800 rounded-2xl">No accounts connected. Add an account to begin copy trading.</div>`;
                     }
-                    
+
                     accounts.forEach(a => {
                         const isConnected = a.connection_status === "connected";
                         const activeCheck = a.is_active ? "checked" : "";
@@ -600,7 +656,7 @@
                     const settings = await setRes.json();
                     const dot = document.getElementById("telegram-dot");
                     const text = document.getElementById("telegram-status-text");
-                    
+
                     if (settings.telegram_status === "connected") {
                         dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse";
                         text.className = "text-emerald-500 font-bold";
@@ -622,18 +678,18 @@
                     const trades = await tradesRes.json();
                     const tbody = document.getElementById("trades-table-body");
                     tbody.innerHTML = "";
-                    
+
                     if (trades.length === 0) {
                         tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-gray-500 font-medium">No copy trades executed yet. Waiting for signals...</td></tr>`;
                     }
-                    
+
                     trades.forEach(t => {
                         const isBuy = t.action === "BUY";
                         const isClosed = t.status === "closed";
                         const isFailed = t.status === "failed";
                         const tr = document.createElement("tr");
                         tr.className = "border-b border-gray-950/40 hover:bg-gray-900/10 transition-colors";
-                        
+
                         tr.innerHTML = `
                             <td class="py-3.5">
                                 <span class="font-bold text-gray-200 block text-xs">#${t.ticket || 'N/A'}</span>
@@ -687,11 +743,11 @@
                     const signals = await sigsRes.json();
                     const list = document.getElementById("signals-list");
                     list.innerHTML = "";
-                    
+
                     if (signals.length === 0) {
                         list.innerHTML = `<div class="py-8 text-center text-gray-500 font-medium">No signals parsed yet.</div>`;
                     }
-                    
+
                     signals.forEach(s => {
                         const isBuy = s.action === "BUY";
                         const div = document.createElement("div");
@@ -723,13 +779,13 @@
                     const logs = await logsRes.json();
                     const consoleEl = document.getElementById("console-logs");
                     const wasAtBottom = consoleEl.scrollHeight - consoleEl.clientHeight <= consoleEl.scrollTop + 10;
-                    
+
                     consoleEl.innerHTML = "";
-                    
+
                     if (logs.length === 0) {
                         consoleEl.innerHTML = `<div class="text-gray-600">Console idle. Logs will appear here.</div>`;
                     }
-                    
+
                     // We reverse logs list to show oldest first in console terminal
                     logs.reverse().forEach(l => {
                         const colorClass = l.level === "ERROR" ? "text-red-400" : l.level === "WARNING" ? "text-yellow-400" : "text-emerald-400";
@@ -743,7 +799,7 @@
                         `;
                         consoleEl.appendChild(line);
                     });
-                    
+
                     // Auto-scroll if user was looking at bottom
                     if (wasAtBottom) {
                         consoleEl.scrollTop = consoleEl.scrollHeight;
@@ -759,4 +815,5 @@
         setInterval(fetchData, 2000);
     </script>
 </body>
+
 </html>
