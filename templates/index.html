@@ -707,7 +707,7 @@
             // Additional validation for MODIFY: must have at least one field checked and filled
             if (action === "MODIFY") {
                 if (!sl && !tp1 && !tp2 && !tp3) {
-                    alert("Please enable and fill at least one parameter (SL, TP1, TP2, TP3) to modify.");
+                    console.warn("Please enable and fill at least one parameter (SL, TP1, TP2, TP3) to modify.");
                     return;
                 }
             }
@@ -732,7 +732,7 @@
                 const result = await res.json();
                 if (!res.ok) throw new Error(result.detail || "Failed to submit signal");
 
-                alert("Manual signal submitted successfully!");
+                console.log("Manual signal submitted successfully!");
                 closeManualSignalModal();
                 document.getElementById("manual-signal-form").reset();
                 
@@ -806,7 +806,7 @@
                 const result = await res.json();
                 if (!res.ok) throw new Error(result.detail || "Failed to add account");
 
-                alert("Account added successfully!");
+                console.log("Account added successfully!");
                 closeAccountModal();
                 document.getElementById("add-account-form").reset();
                 fetchData();
@@ -881,7 +881,7 @@
                     body: JSON.stringify(data)
                 });
                 if (!res.ok) throw new Error("Failed to save settings");
-                alert("Config saved successfully!");
+                console.log("Config saved successfully!");
                 document.getElementById("auth-phone").value = data.phone;
             } catch (err) {
                 alert(`Error: ${err.message}`);
@@ -892,7 +892,7 @@
         async function sendAuthCode() {
             const phone = document.getElementById("auth-phone").value.trim();
             if (!phone) {
-                alert("Please enter a valid phone number with country code.");
+                console.warn("Please enter a valid phone number with country code.");
                 return;
             }
 
@@ -905,7 +905,7 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || "Failed to send code");
 
-                alert("Verification code has been sent to your Telegram/Phone.");
+                console.log("Verification code has been sent to your Telegram/Phone.");
                 document.getElementById("auth-code-container").classList.remove("hidden");
             } catch (err) {
                 alert(`Error: ${err.message}`);
@@ -919,7 +919,7 @@
             const password = document.getElementById("auth-password").value.trim();
 
             if (!phone || !code) {
-                alert("Phone and Code are required.");
+                console.warn("Phone and Code are required.");
                 return;
             }
 
@@ -936,13 +936,13 @@
                 const data = await res.json();
 
                 if (res.status === 202 && data.status === "2fa_required") {
-                    alert("Two-Factor Authentication is enabled on this account. Please enter your 2FA password in the input field and click confirm again.");
+                    console.warn("Two-Factor Authentication is enabled on this account. Please enter your 2FA password in the input field and click confirm again.");
                     return;
                 }
 
                 if (!res.ok) throw new Error(data.detail || "Failed to log in");
 
-                alert("Telegram connection established successfully!");
+                console.log("Telegram connection established successfully!");
                 document.getElementById("auth-code-container").classList.add("hidden");
                 closeSettingsModal();
                 fetchData();
@@ -1343,7 +1343,6 @@
         };
 
         async function handleLogout() {
-            if (!confirm("Are you sure you want to sign out?")) return;
             try {
                 const res = await fetch('/api/logout', { method: 'POST' });
                 if (res.ok) {
