@@ -147,6 +147,93 @@ async def get_stats():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+POPULAR_MT5_SERVERS = [
+    "DooTechnology-Live",
+    "DooTechnology-Live-2",
+    "DooTechnology-Live-3",
+    "DooTechnology-Demo",
+    "XMGlobal-MT5",
+    "XMGlobal-MT5 2",
+    "XMGlobal-MT5 3",
+    "XMGlobal-MT5 4",
+    "XMGlobal-MT5 5",
+    "XMGlobal-MT5 6",
+    "XMGlobal-Demo",
+    "Exness-MT5Real",
+    "Exness-MT5Real2",
+    "Exness-MT5Real3",
+    "Exness-MT5Real4",
+    "Exness-MT5Real5",
+    "Exness-MT5Real6",
+    "Exness-MT5Real7",
+    "Exness-MT5Real8",
+    "Exness-MT5Real9",
+    "Exness-MT5Real10",
+    "Exness-MT5Trial",
+    "Exness-MT5Trial2",
+    "ICMarketsSC-Demo",
+    "ICMarketsSC-Live01",
+    "ICMarketsSC-Live02",
+    "ICMarketsSC-Live03",
+    "ICMarketsSC-Live04",
+    "ICMarketsSC-Live05",
+    "ICMarketsSC-Live06",
+    "ICMarketsSC-Live07",
+    "ICMarketsSC-Live08",
+    "ICMarketsSC-Live09",
+    "ICMarketsSC-Live10",
+    "ICMarkets-Demo",
+    "ICMarkets-Live01",
+    "Pepperstone-MT5-Demo",
+    "Pepperstone-MT5-Live",
+    "RoboForex-Demo",
+    "RoboForex-Pro",
+    "RoboForex-ProCent",
+    "RoboForex-ECN",
+    "RoboForex-Prime",
+    "OctaFX-Demo",
+    "OctaFX-Real",
+    "OctaFX-Real2",
+    "FBS-Demo",
+    "FBS-Real",
+    "AdmiralMarkets-Demo",
+    "AdmiralMarkets-Live",
+    "FXCM-MT5Demo",
+    "FXCM-MT5Real",
+    "Tickmill-Demo",
+    "Tickmill-Live",
+    "ThinkMarkets-Demo",
+    "ThinkMarkets-Live",
+    "FPMarkets-Demo",
+    "FPMarkets-Live",
+    "VantageInternational-Demo",
+    "VantageInternational-Live",
+    "VTMarkets-Demo",
+    "VTMarkets-Live",
+    "Hantec-Live",
+    "Hantec-Demo",
+    "Ava-MT5-Demo",
+    "Ava-MT5-Real",
+    "MonetaMarkets-Demo",
+    "MonetaMarkets-Live",
+    "MetaQuotes-Demo"
+]
+
+@app.get("/api/broker-servers", response_model=List[str])
+async def api_get_broker_servers():
+    """
+    Returns a combined list of popular MT5 broker servers and any unique servers already saved in existing database accounts.
+    """
+    try:
+        accounts = get_accounts()
+        saved_servers = {a["server"] for a in accounts if a.get("server")}
+        
+        # Combine popular list with saved servers to keep unique items
+        combined_servers = set(POPULAR_MT5_SERVERS) | saved_servers
+        return sorted(list(combined_servers))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/accounts")
 async def api_get_accounts():
     return get_accounts()
