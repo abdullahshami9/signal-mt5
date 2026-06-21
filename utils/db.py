@@ -1,6 +1,8 @@
 import sqlite3
 import os
 import json
+import hashlib
+import uuid
 from datetime import datetime
 
 DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "trading_bot.db"))
@@ -15,6 +17,26 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    # Access Users table for parent login
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS access_users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    # User Sessions table for tracking login sessions
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS user_sessions (
+        session_id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
+    )
+    """)
+
     # Accounts table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS accounts (
@@ -31,7 +53,9 @@ def init_db():
         last_error TEXT,
         name TEXT,
         payment_date TEXT,
-        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        user_id INTEGER,
+        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
     )
     """)
     
@@ -65,13 +89,17 @@ def init_db():
     except sqlite3.OperationalError:
         pass
         
-    # Ensure name and payment_date columns exist in accounts table in case table was created already
+    # Ensure columns exist in accounts table in case table was created already
     try:
         cursor.execute("ALTER TABLE accounts ADD COLUMN name TEXT")
     except sqlite3.OperationalError:
         pass
     try:
         cursor.execute("ALTER TABLE accounts ADD COLUMN payment_date TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE accounts ADD COLUMN user_id INTEGER REFERENCES access_users(id) ON DELETE CASCADE")
     except sqlite3.OperationalError:
         pass
     
@@ -150,6 +178,13 @@ def init_db():
     for k, v in default_settings.items():
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
         
+    # Seed default user if access_users is empty
+    cursor.execute("SELECT COUNT(*) FROM access_users")
+    if cursor.fetchone()[0] == 0:
+        default_username = "vendor1"
+        default_pwd_hash = hash_password("vendor123")
+        cursor.execute("INSERT INTO access_users (username, password_hash) VALUES (?, ?)", (default_username, default_pwd_hash))
+        
     conn.commit()
     conn.close()
 
@@ -164,34 +199,56 @@ def add_log(level, sender, message):
     finally:
         conn.close()
 
-def get_recent_logs(limit=100):
+def get_recent_logs(limit=100, user_id=None):
     conn = get_db_connection()
     try:
-        rows = conn.execute("SELECT * FROM logs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-        return [dict(r) for r in rows]
+        if user_id is not None:
+            # fetch the login IDs of the user's accounts
+            accounts = conn.execute("SELECT login FROM accounts WHERE user_id = ?", (user_id,)).fetchall()
+            logins = [str(a["login"]) for a in accounts]
+            
+            rows = conn.execute("SELECT * FROM logs ORDER BY id DESC").fetchall()
+            filtered = []
+            for r in rows:
+                r_dict = dict(r)
+                sender = r_dict.get("sender", "")
+                # System or dashboard logs are shown to everyone. 
+                # Specific executor logs are only shown if they belong to this user's account.
+                is_user_log = (sender in ["system", "dashboard", "listener"]) or any(str(login) in sender for login in logins)
+                if is_user_log:
+                    filtered.append(r_dict)
+                    if len(filtered) >= limit:
+                        break
+            return filtered
+        else:
+            rows = conn.execute("SELECT * FROM logs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            return [dict(r) for r in rows]
     finally:
         conn.close()
 
 # Accounts management
-def add_account(login, password, server, terminal_path, risk_pct=1.0, name=None, payment_date=None):
+def add_account(login, password, server, terminal_path, risk_pct=1.0, name=None, payment_date=None, user_id=None):
     conn = get_db_connection()
     try:
         conn.execute("""
-        INSERT INTO accounts (login, password, server, terminal_path, risk_pct, name, payment_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (int(login), password, server, terminal_path or "", float(risk_pct), name, payment_date))
+        INSERT INTO accounts (login, password, server, terminal_path, risk_pct, name, payment_date, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (int(login), password, server, terminal_path or "", float(risk_pct), name, payment_date, user_id))
         conn.commit()
-        add_log("INFO", "system", f"Added MT5 account {login} on server {server}")
+        add_log("INFO", "system", f"Added MT5 account {login} on server {server} for user {user_id}")
         return True
     except sqlite3.IntegrityError:
         return False
     finally:
         conn.close()
 
-def get_accounts():
+def get_accounts(user_id=None):
     conn = get_db_connection()
     try:
-        rows = conn.execute("SELECT * FROM accounts ORDER BY login ASC").fetchall()
+        if user_id is not None:
+            rows = conn.execute("SELECT * FROM accounts WHERE user_id = ? ORDER BY login ASC", (user_id,)).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM accounts ORDER BY login ASC").fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
@@ -397,14 +454,97 @@ def update_trade_tp_status(trade_id, tp1_hit=None, tp2_hit=None, tp3_hit=None, s
     finally:
         conn.close()
 
-def get_recent_trades(limit=50):
+def get_recent_trades(limit=50, user_id=None):
     conn = get_db_connection()
     try:
-        rows = conn.execute("""
-        SELECT t.*, a.login as account_login FROM trades t
-        JOIN accounts a ON t.account_id = a.id
-        ORDER BY t.id DESC LIMIT ?
-        """, (limit,)).fetchall()
+        if user_id is not None:
+            rows = conn.execute("""
+            SELECT t.*, a.login as account_login FROM trades t
+            JOIN accounts a ON t.account_id = a.id
+            WHERE a.user_id = ?
+            ORDER BY t.id DESC LIMIT ?
+            """, (user_id, limit)).fetchall()
+        else:
+            rows = conn.execute("""
+            SELECT t.*, a.login as account_login FROM trades t
+            JOIN accounts a ON t.account_id = a.id
+            ORDER BY t.id DESC LIMIT ?
+            """, (limit,)).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+# User & Session management helpers
+def hash_password(password: str, salt: str = None) -> str:
+    if salt is None:
+        salt = uuid.uuid4().hex
+    pwd_hash = hashlib.pbkdf2_hmac(
+        'sha256',
+        password.encode('utf-8'),
+        salt.encode('utf-8'),
+        100000
+    )
+    return f"{salt}:{pwd_hash.hex()}"
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    try:
+        salt, pwd_hash_hex = stored_hash.split(":", 1)
+        pwd_hash = hashlib.pbkdf2_hmac(
+            'sha256',
+            password.encode('utf-8'),
+            salt.encode('utf-8'),
+            100000
+        )
+        return pwd_hash.hex() == pwd_hash_hex
+    except Exception:
+        return False
+
+def create_user(username, password):
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        pwd_hash = hash_password(password)
+        cursor.execute("INSERT INTO access_users (username, password_hash) VALUES (?, ?)", (username, pwd_hash))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    finally:
+        conn.close()
+
+def authenticate_user(username, password):
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM access_users WHERE username = ?", (username,)).fetchone()
+        if row and verify_password(password, row["password_hash"]):
+            return dict(row)
+        return None
+    finally:
+        conn.close()
+
+def create_session(user_id):
+    conn = get_db_connection()
+    try:
+        session_token = uuid.uuid4().hex
+        conn.execute("INSERT INTO user_sessions (session_id, user_id) VALUES (?, ?)", (session_token, user_id))
+        conn.commit()
+        return session_token
+    finally:
+        conn.close()
+
+def verify_session(session_token):
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT user_id FROM user_sessions WHERE session_id = ?", (session_token,)).fetchone()
+        return row["user_id"] if row else None
+    finally:
+        conn.close()
+
+def delete_session(session_token):
+    conn = get_db_connection()
+    try:
+        conn.execute("DELETE FROM user_sessions WHERE session_id = ?", (session_token,))
+        conn.commit()
+        return True
     finally:
         conn.close()

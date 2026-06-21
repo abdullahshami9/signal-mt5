@@ -2,8 +2,8 @@ import os
 import json
 import psutil
 import asyncio
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Request, Cookie, Depends
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
@@ -13,7 +13,8 @@ from telethon.errors import SessionPasswordNeededError
 from utils.db import (
     get_accounts, add_account, delete_account, set_account_active,
     get_recent_trades, get_recent_signals, get_recent_logs,
-    get_settings, save_settings, add_log, add_signal, get_db_connection
+    get_settings, save_settings, add_log, add_signal, get_db_connection, get_account,
+    verify_session, authenticate_user, create_session, create_user, delete_session
 )
 
 app = FastAPI(title="Antigravity MT5 Copier Dashboard")
@@ -64,19 +65,95 @@ class SignalCreate(BaseModel):
     tp2: Optional[float] = None
     tp3: Optional[float] = None
 
+class LoginPayload(BaseModel):
+    username: str
+    password: str
+
+class RegisterPayload(BaseModel):
+    username: str
+    password: str
+
+async def get_current_user(session_token: Optional[str] = Cookie(None)):
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    user_id = verify_session(session_token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user_id
+
 @app.get("/", response_class=HTMLResponse)
-async def get_dashboard(request: Request):
+async def get_dashboard(request: Request, session_token: Optional[str] = Cookie(None)):
     """
-    Serves the main HTML dashboard file directly.
+    Serves the main HTML dashboard file directly if logged in, otherwise redirects to /login.
     """
+    if not session_token or not verify_session(session_token):
+        return RedirectResponse(url="/login", status_code=303)
+        
     html_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "templates", "index.html"))
     if not os.path.exists(html_path):
         return HTMLResponse("<h1>Dashboard templates/index.html not found!</h1>", status_code=404)
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(f.read())
 
+@app.get("/login", response_class=HTMLResponse)
+async def get_login_page(request: Request, session_token: Optional[str] = Cookie(None)):
+    """
+    Serves the login page. If already logged in, redirects to the dashboard.
+    """
+    if session_token and verify_session(session_token):
+        return RedirectResponse(url="/", status_code=303)
+        
+    html_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "templates", "login.html"))
+    if not os.path.exists(html_path):
+        return HTMLResponse("<h1>Login templates/login.html not found!</h1>", status_code=404)
+    with open(html_path, "r", encoding="utf-8") as f:
+        return HTMLResponse(f.read())
+
+@app.post("/api/login")
+async def api_login(payload: LoginPayload):
+    username = payload.username.strip()
+    password = payload.password
+    
+    user = authenticate_user(username, password)
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid username or password")
+        
+    session_token = create_session(user["id"])
+    
+    response = JSONResponse(content={"status": "success", "message": "Logged in successfully"})
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        httponly=True,
+        max_age=30 * 24 * 60 * 60, # 30 days
+        samesite="lax"
+    )
+    return response
+
+@app.post("/api/register")
+async def api_register(payload: RegisterPayload):
+    username = payload.username.strip()
+    password = payload.password
+    
+    if len(username) < 3 or len(password) < 5:
+        raise HTTPException(status_code=400, detail="Username must be at least 3 characters, password at least 5 characters")
+        
+    success = create_user(username, password)
+    if not success:
+        raise HTTPException(status_code=400, detail="Username already exists")
+        
+    return {"status": "success", "message": "User registered successfully. Please login."}
+
+@app.post("/api/logout")
+async def api_logout(session_token: Optional[str] = Cookie(None)):
+    if session_token:
+        delete_session(session_token)
+    response = JSONResponse(content={"status": "success", "message": "Logged out successfully"})
+    response.delete_cookie(key="session_token")
+    return response
+
 @app.get("/signal_checker")
-async def signal_checker(symbol: str = "XAUUSD", action: str = "BUY"):
+async def signal_checker(symbol: str = "XAUUSD", action: str = "BUY", current_user: int = Depends(get_current_user)):
     """
     Test endpoint to automatically inject a signal for 0.01 lot trade execution.
     """
@@ -105,7 +182,7 @@ async def signal_checker(symbol: str = "XAUUSD", action: str = "BUY"):
             tp3=None
         )
         
-        add_log("INFO", "dashboard", f"Injected manual test signal {signal_id} ({action} {symbol}) via /signal_checker")
+        add_log("INFO", f"dashboard_user_{current_user}", f"Injected manual test signal {signal_id} ({action} {symbol}) via /signal_checker")
         return {
             "status": "success",
             "message": f"Test signal injected successfully.",
@@ -118,17 +195,17 @@ async def signal_checker(symbol: str = "XAUUSD", action: str = "BUY"):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/stats")
-async def get_stats():
+async def get_stats(current_user: int = Depends(get_current_user)):
     """
     Returns global trade and system performance statistics.
     """
     try:
-        accounts = get_accounts()
+        accounts = get_accounts(user_id=current_user)
         total_balance = sum(a["balance"] for a in accounts)
         total_equity = sum(a["equity"] for a in accounts)
         
         # Get count of active trades
-        recent_trades = get_recent_trades(100)
+        recent_trades = get_recent_trades(100, user_id=current_user)
         open_trades_count = sum(1 for t in recent_trades if t["status"] == "open")
         
         # Get VPS Resource Info
@@ -220,12 +297,12 @@ POPULAR_MT5_SERVERS = [
 ]
 
 @app.get("/api/broker-servers", response_model=List[str])
-async def api_get_broker_servers():
+async def api_get_broker_servers(current_user: int = Depends(get_current_user)):
     """
     Returns a combined list of popular MT5 broker servers and any unique servers already saved in existing database accounts.
     """
     try:
-        accounts = get_accounts()
+        accounts = get_accounts(user_id=current_user)
         saved_servers = {a["server"] for a in accounts if a.get("server")}
         
         # Combine popular list with saved servers to keep unique items
@@ -235,11 +312,11 @@ async def api_get_broker_servers():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/accounts")
-async def api_get_accounts():
-    return get_accounts()
+async def api_get_accounts(current_user: int = Depends(get_current_user)):
+    return get_accounts(user_id=current_user)
 
 @app.post("/api/accounts")
-async def api_add_account(acc: AccountCreate):
+async def api_add_account(acc: AccountCreate, current_user: int = Depends(get_current_user)):
     success = add_account(
         login=acc.login,
         password=acc.password,
@@ -247,45 +324,58 @@ async def api_add_account(acc: AccountCreate):
         terminal_path=acc.terminal_path,
         risk_pct=acc.risk_pct,
         name=acc.name,
-        payment_date=acc.payment_date
+        payment_date=acc.payment_date,
+        user_id=current_user
     )
     if not success:
         raise HTTPException(status_code=400, detail="Account login already exists")
     return {"status": "success", "message": f"Account {acc.login} added successfully."}
 
 @app.post("/api/accounts/{account_id}/toggle")
-async def api_toggle_account(account_id: int, request: Request):
+async def api_toggle_account(account_id: int, request: Request, current_user: int = Depends(get_current_user)):
+    account = get_account(account_id)
+    if not account or account.get("user_id") != current_user:
+        raise HTTPException(status_code=403, detail="Not authorized to access this account")
     data = await request.json()
     is_active = data.get("is_active", True)
     set_account_active(account_id, is_active)
     status_str = "activated" if is_active else "deactivated"
-    add_log("INFO", "dashboard", f"Account ID {account_id} has been {status_str}")
+    add_log("INFO", f"dashboard_user_{current_user}", f"Account ID {account_id} has been {status_str}")
     return {"status": "success", "message": f"Account {status_str}."}
 
 @app.delete("/api/accounts/{account_id}")
-async def api_delete_account(account_id: int):
+async def api_delete_account(account_id: int, current_user: int = Depends(get_current_user)):
+    account = get_account(account_id)
+    if not account or account.get("user_id") != current_user:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this account")
     delete_account(account_id)
     return {"status": "success", "message": "Account deleted successfully."}
 
 @app.get("/api/trades")
-async def api_get_trades():
-    return get_recent_trades(50)
+async def api_get_trades(current_user: int = Depends(get_current_user)):
+    return get_recent_trades(50, user_id=current_user)
 
 @app.post("/api/trades/{trade_id}/cancel")
-async def api_cancel_trade(trade_id: int):
+async def api_cancel_trade(trade_id: int, current_user: int = Depends(get_current_user)):
     conn = get_db_connection()
     try:
         trade = conn.execute("SELECT * FROM trades WHERE id = ?", (trade_id,)).fetchone()
         if not trade:
             raise HTTPException(status_code=404, detail="Trade not found")
         trade = dict(trade)
+        
+        # Verify ownership
+        account = get_account(trade["account_id"])
+        if not account or account.get("user_id") != current_user:
+            raise HTTPException(status_code=403, detail="Not authorized to cancel this trade")
+            
         if trade["status"] != "pending":
             raise HTTPException(status_code=400, detail="Only pending orders can be cancelled")
         
         conn.execute("UPDATE trades SET status = 'cancel_requested', last_updated = CURRENT_TIMESTAMP WHERE id = ?", (trade_id,))
         conn.commit()
         
-        add_log("INFO", "dashboard", f"Cancel requested for pending trade ID {trade_id} (ticket {trade['ticket']})")
+        add_log("INFO", f"dashboard_user_{current_user}", f"Cancel requested for pending trade ID {trade_id} (ticket {trade['ticket']})")
         return {"status": "success", "message": "Cancel request submitted successfully"}
     except HTTPException:
         raise
@@ -295,17 +385,25 @@ async def api_cancel_trade(trade_id: int):
         conn.close()
 
 @app.post("/api/trades/cancel_all")
-async def api_cancel_all_trades():
+async def api_cancel_all_trades(current_user: int = Depends(get_current_user)):
     conn = get_db_connection()
     try:
-        pending_count = conn.execute("SELECT COUNT(*) FROM trades WHERE status = 'pending'").fetchone()[0]
+        pending_count = conn.execute("""
+        SELECT COUNT(*) FROM trades t
+        JOIN accounts a ON t.account_id = a.id
+        WHERE t.status = 'pending' AND a.user_id = ?
+        """, (current_user,)).fetchone()[0]
+        
         if pending_count == 0:
             return {"status": "success", "message": "No pending orders to cancel"}
             
-        conn.execute("UPDATE trades SET status = 'cancel_requested', last_updated = CURRENT_TIMESTAMP WHERE status = 'pending'")
+        conn.execute("""
+        UPDATE trades SET status = 'cancel_requested', last_updated = CURRENT_TIMESTAMP 
+        WHERE status = 'pending' AND account_id IN (SELECT id FROM accounts WHERE user_id = ?)
+        """, (current_user,))
         conn.commit()
         
-        add_log("INFO", "dashboard", f"Cancel requested for all {pending_count} pending orders")
+        add_log("INFO", f"dashboard_user_{current_user}", f"Cancel requested for all {pending_count} pending orders")
         return {"status": "success", "message": f"Cancel request submitted for all {pending_count} pending orders"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -313,11 +411,11 @@ async def api_cancel_all_trades():
         conn.close()
 
 @app.get("/api/signals")
-async def api_get_signals():
+async def api_get_signals(current_user: int = Depends(get_current_user)):
     return get_recent_signals(20)
 
 @app.post("/api/signals")
-async def api_add_manual_signal(sig: SignalCreate):
+async def api_add_manual_signal(sig: SignalCreate, current_user: int = Depends(get_current_user)):
     try:
         action = sig.action.upper().strip()
         if action not in ["BUY", "SELL", "CLOSE", "MODIFY"]:
@@ -360,17 +458,17 @@ async def api_add_manual_signal(sig: SignalCreate):
             entry_max=sig.entry_max
         )
         
-        add_log("INFO", "dashboard", f"Manual signal {signal_id} ({action} {symbol}) added from dashboard UI")
+        add_log("INFO", f"dashboard_user_{current_user}", f"Manual signal {signal_id} ({action} {symbol}) added from dashboard UI")
         return {"status": "success", "message": "Manual signal created successfully", "signal_id": signal_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/logs")
-async def api_get_logs():
-    return get_recent_logs(100)
+async def api_get_logs(current_user: int = Depends(get_current_user)):
+    return get_recent_logs(100, user_id=current_user)
 
 @app.get("/api/settings")
-async def api_get_settings():
+async def api_get_settings(current_user: int = Depends(get_current_user)):
     settings = get_settings()
     # Monitored channels are stored as JSON string
     try:
@@ -386,7 +484,7 @@ async def api_get_settings():
     }
 
 @app.post("/api/settings")
-async def api_save_settings(settings: SettingsUpdate):
+async def api_save_settings(settings: SettingsUpdate, current_user: int = Depends(get_current_user)):
     save_settings({
         "api_id": settings.api_id.strip(),
         "api_hash": settings.api_hash.strip(),
@@ -396,7 +494,7 @@ async def api_save_settings(settings: SettingsUpdate):
     return {"status": "success", "message": "Settings saved successfully."}
 
 @app.post("/api/telegram/send_code")
-async def api_telegram_send_code(payload: TelegramCodeSend):
+async def api_telegram_send_code(payload: TelegramCodeSend, current_user: int = Depends(get_current_user)):
     phone = payload.phone.strip()
     settings = get_settings()
     api_id_str = settings.get("api_id", "")
@@ -427,17 +525,17 @@ async def api_telegram_send_code(payload: TelegramCodeSend):
             "hash": result.phone_code_hash
         }
         
-        add_log("INFO", "dashboard", f"Sent verification code to {phone}")
+        add_log("INFO", f"dashboard_user_{current_user}", f"Sent verification code to {phone}")
         return {"status": "success", "message": "Code sent successfully."}
     except Exception as e:
-        add_log("ERROR", "dashboard", f"Failed to send Telegram code to {phone}: {e}")
+        add_log("ERROR", f"dashboard_user_{current_user}", f"Failed to send Telegram code to {phone}: {e}")
         # Make sure to disconnect if active
         if client:
             await client.disconnect()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/telegram/login")
-async def api_telegram_login(payload: TelegramLogin):
+async def api_telegram_login(payload: TelegramLogin, current_user: int = Depends(get_current_user)):
     phone = payload.phone.strip()
     code = payload.code.strip()
     password = payload.password.strip() if payload.password else None
@@ -466,7 +564,7 @@ async def api_telegram_login(payload: TelegramLogin):
                 
         # Successful login
         save_settings({"telegram_status": "connected", "phone": phone})
-        add_log("INFO", "dashboard", f"Successfully logged into Telegram account {phone}")
+        add_log("INFO", f"dashboard_user_{current_user}", f"Successfully logged into Telegram account {phone}")
         
         # Clean up temporary storage and disconnect client
         # Note: Disconnect will let the separate listener process claim the session lock
@@ -475,7 +573,7 @@ async def api_telegram_login(payload: TelegramLogin):
         
         return {"status": "success", "message": "Logged into Telegram successfully."}
     except Exception as e:
-        add_log("ERROR", "dashboard", f"Failed to complete Telegram login for {phone}: {e}")
+        add_log("ERROR", f"dashboard_user_{current_user}", f"Failed to complete Telegram login for {phone}: {e}")
         # Disconnect client
         await client.disconnect()
         if phone in active_logins:

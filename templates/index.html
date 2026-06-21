@@ -105,6 +105,10 @@
                 class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition-all shadow-md hover:scale-[1.02] active:scale-[0.98]">
                 Setup Telegram
             </button>
+            <button onclick="handleLogout()"
+                class="px-4 py-2 bg-rose-600/20 hover:bg-rose-600/35 text-rose-400 border border-rose-500/30 rounded-xl text-sm font-medium transition-all shadow-md hover:scale-[1.02] active:scale-[0.98]">
+                Logout
+            </button>
         </div>
     </header>
 
@@ -1326,6 +1330,30 @@
                     hideSuggestions();
                 }
             });
+        }
+
+        // Intercept all API fetches to redirect to /login if unauthenticated (401)
+        const originalFetch = window.fetch;
+        window.fetch = async function(...args) {
+            const response = await originalFetch(...args);
+            if (response.status === 401) {
+                window.location.href = '/login';
+            }
+            return response;
+        };
+
+        async function handleLogout() {
+            if (!confirm("Are you sure you want to sign out?")) return;
+            try {
+                const res = await fetch('/api/logout', { method: 'POST' });
+                if (res.ok) {
+                    window.location.href = '/login';
+                } else {
+                    alert('Logout failed');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
         }
 
         // Auto-refresh interval
