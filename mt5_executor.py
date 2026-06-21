@@ -9,10 +9,17 @@ import MetaTrader5 as mt5
 from utils.db import (
     get_account, update_account_status, get_pending_signals_for_account,
     mark_signal_executed, add_trade, get_open_trades_for_account,
-    update_trade_tp_status, add_log, get_pending_trades_for_account,
+    update_trade_tp_status, add_log as db_add_log, get_pending_trades_for_account,
     get_cancel_requested_trades_for_account
 )
 from utils.mt5_helpers import calculate_lot_size, divide_lots, get_filling_mode
+
+executor_user_id = None
+
+def add_log(level, sender, message, user_id=None):
+    if user_id is None:
+        user_id = executor_user_id
+    db_add_log(level, sender, message, user_id)
 
 def parse_args():
     parser = argparse.ArgumentParser(description="MT5 Account Executor Worker")
@@ -761,6 +768,7 @@ def monitor_open_trades(account):
                     add_log("ERROR", f"executor_acc_{login}", f"Failed to execute partial close for TP2: {res.comment if res else 'unknown'}")
 
 def main():
+    global executor_user_id
     args = parse_args()
     account_id = args.account_id
     
@@ -769,6 +777,8 @@ def main():
     if not account:
         print(f"Error: Account with ID {account_id} not found in database.", file=sys.stderr)
         sys.exit(1)
+        
+    executor_user_id = account.get("user_id")
         
     login = int(account["login"])
     

@@ -37,6 +37,13 @@ def init_db():
     )
     """)
 
+    # Seed default user if access_users is empty
+    cursor.execute("SELECT COUNT(*) FROM access_users")
+    if cursor.fetchone()[0] == 0:
+        default_username = "vendor1"
+        default_pwd_hash = hash_password("vendor123")
+        cursor.execute("INSERT INTO access_users (username, password_hash) VALUES (?, ?)", (default_username, default_pwd_hash))
+
     # Accounts table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS accounts (
@@ -79,7 +86,7 @@ def init_db():
     )
     """)
     
-    # Ensure entry_min and entry_max columns exist in case table was created already
+    # Ensure entry_min, entry_max and user_id columns exist in case table was created already
     try:
         cursor.execute("ALTER TABLE signals ADD COLUMN entry_min REAL")
     except sqlite3.OperationalError:
@@ -88,6 +95,12 @@ def init_db():
         cursor.execute("ALTER TABLE signals ADD COLUMN entry_max REAL")
     except sqlite3.OperationalError:
         pass
+    try:
+        cursor.execute("ALTER TABLE signals ADD COLUMN user_id INTEGER REFERENCES access_users(id) ON DELETE CASCADE")
+    except sqlite3.OperationalError:
+        pass
+        
+    cursor.execute("UPDATE signals SET user_id = 1 WHERE user_id IS NULL")
         
     # Ensure columns exist in accounts table in case table was created already
     try:
@@ -148,13 +161,53 @@ def init_db():
     )
     """)
     
-    # Settings table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-    )
-    """)
+    # Settings table migration to support compound key (user_id, key)
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'")
+    if cursor.fetchone():
+        cursor.execute("PRAGMA table_info(settings)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "user_id" not in columns:
+            # Fetch old settings
+            cursor.execute("SELECT key, value FROM settings")
+            old_settings = cursor.fetchall()
+            # Drop table
+            cursor.execute("DROP TABLE settings")
+            # Create new settings table
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                user_id INTEGER NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                PRIMARY KEY (user_id, key),
+                FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
+            )
+            """)
+            # Migrate old settings (assign to user_id=1)
+            for key, value in old_settings:
+                cursor.execute("INSERT OR REPLACE INTO settings (user_id, key, value) VALUES (1, ?, ?)", (key, value))
+    else:
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            user_id INTEGER NOT NULL,
+            key TEXT NOT NULL,
+            value TEXT NOT NULL,
+            PRIMARY KEY (user_id, key),
+            FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
+        )
+        """)
+        
+    # Seed default settings for user_id = 1
+    cursor.execute("SELECT COUNT(*) FROM settings WHERE user_id = 1")
+    if cursor.fetchone()[0] == 0:
+        default_settings = {
+            "api_id": "",
+            "api_hash": "",
+            "phone": "",
+            "monitored_channels": "[]", # JSON list of channel IDs or usernames
+            "telegram_status": "disconnected"
+        }
+        for k, v in default_settings.items():
+            cursor.execute("INSERT OR IGNORE INTO settings (user_id, key, value) VALUES (1, ?, ?)", (k, v))
     
     # Logs table
     cursor.execute("""
@@ -167,32 +220,22 @@ def init_db():
     )
     """)
     
-    # Seed default settings
-    default_settings = {
-        "api_id": "",
-        "api_hash": "",
-        "phone": "",
-        "monitored_channels": "[]", # JSON list of channel IDs or usernames
-        "telegram_status": "disconnected"
-    }
-    for k, v in default_settings.items():
-        cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
+    # Ensure logs has user_id column
+    try:
+        cursor.execute("ALTER TABLE logs ADD COLUMN user_id INTEGER REFERENCES access_users(id) ON DELETE CASCADE")
+    except sqlite3.OperationalError:
+        pass
         
-    # Seed default user if access_users is empty
-    cursor.execute("SELECT COUNT(*) FROM access_users")
-    if cursor.fetchone()[0] == 0:
-        default_username = "vendor1"
-        default_pwd_hash = hash_password("vendor123")
-        cursor.execute("INSERT INTO access_users (username, password_hash) VALUES (?, ?)", (default_username, default_pwd_hash))
+    cursor.execute("UPDATE logs SET user_id = 1 WHERE user_id IS NULL")
         
     conn.commit()
     conn.close()
 
 # Logs helpers
-def add_log(level, sender, message):
+def add_log(level, sender, message, user_id=None):
     conn = get_db_connection()
     try:
-        conn.execute("INSERT INTO logs (level, sender, message) VALUES (?, ?, ?)", (level, str(sender), message))
+        conn.execute("INSERT INTO logs (level, sender, message, user_id) VALUES (?, ?, ?, ?)", (level, str(sender), message, user_id))
         conn.commit()
     except Exception as e:
         print(f"Database error while adding log: {e}")
@@ -203,23 +246,8 @@ def get_recent_logs(limit=100, user_id=None):
     conn = get_db_connection()
     try:
         if user_id is not None:
-            # fetch the login IDs of the user's accounts
-            accounts = conn.execute("SELECT login FROM accounts WHERE user_id = ?", (user_id,)).fetchall()
-            logins = [str(a["login"]) for a in accounts]
-            
-            rows = conn.execute("SELECT * FROM logs ORDER BY id DESC").fetchall()
-            filtered = []
-            for r in rows:
-                r_dict = dict(r)
-                sender = r_dict.get("sender", "")
-                # System or dashboard logs are shown to everyone. 
-                # Specific executor logs are only shown if they belong to this user's account.
-                is_user_log = (sender in ["system", "dashboard", "listener"]) or any(str(login) in sender for login in logins)
-                if is_user_log:
-                    filtered.append(r_dict)
-                    if len(filtered) >= limit:
-                        break
-            return filtered
+            rows = conn.execute("SELECT * FROM logs WHERE user_id = ? ORDER BY id DESC LIMIT ?", (user_id, limit)).fetchall()
+            return [dict(r) for r in rows]
         else:
             rows = conn.execute("SELECT * FROM logs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
             return [dict(r) for r in rows]
@@ -235,7 +263,7 @@ def add_account(login, password, server, terminal_path, risk_pct=1.0, name=None,
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (int(login), password, server, terminal_path or "", float(risk_pct), name, payment_date, user_id))
         conn.commit()
-        add_log("INFO", "system", f"Added MT5 account {login} on server {server} for user {user_id}")
+        add_log("INFO", "system", f"Added MT5 account {login} on server {server} for user {user_id}", user_id=user_id)
         return True
     except sqlite3.IntegrityError:
         return False
@@ -295,59 +323,84 @@ def set_account_active(account_id, is_active):
         conn.close()
 
 # Settings helpers
-def get_settings():
+def get_settings(user_id=None):
+    if user_id is None:
+        user_id = 1
     conn = get_db_connection()
     try:
-        rows = conn.execute("SELECT * FROM settings").fetchall()
+        # Seed default settings if they don't exist for this user_id
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM settings WHERE user_id = ?", (user_id,))
+        if cursor.fetchone()[0] == 0:
+            default_settings = {
+                "api_id": "",
+                "api_hash": "",
+                "phone": "",
+                "monitored_channels": "[]", # JSON list of channel IDs or usernames
+                "telegram_status": "disconnected"
+            }
+            for k, v in default_settings.items():
+                cursor.execute("INSERT OR IGNORE INTO settings (user_id, key, value) VALUES (?, ?, ?)", (user_id, k, v))
+            conn.commit()
+
+        rows = conn.execute("SELECT key, value FROM settings WHERE user_id = ?", (user_id,)).fetchall()
         return {r["key"]: r["value"] for r in rows}
     finally:
         conn.close()
 
-def save_settings(settings_dict):
+def save_settings(settings_dict, user_id=None):
+    if user_id is None:
+        user_id = 1
     conn = get_db_connection()
     try:
         for k, v in settings_dict.items():
-            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, str(v)))
+            conn.execute("INSERT OR REPLACE INTO settings (user_id, key, value) VALUES (?, ?, ?)", (user_id, k, str(v)))
         conn.commit()
-        add_log("INFO", "system", "Updated system settings")
+        add_log("INFO", "system", "Updated system settings", user_id=user_id)
         return True
     finally:
         conn.close()
 
 # Signals management
-def add_signal(telegram_msg_id, channel_id, raw_text, action, symbol, sl=None, tp1=None, tp2=None, tp3=None, entry_min=None, entry_max=None):
+def add_signal(telegram_msg_id, channel_id, raw_text, action, symbol, sl=None, tp1=None, tp2=None, tp3=None, entry_min=None, entry_max=None, user_id=None):
+    if user_id is None:
+        user_id = 1
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
         cursor.execute("""
-        INSERT INTO signals (telegram_msg_id, channel_id, raw_text, action, symbol, sl, tp1, tp2, tp3, entry_min, entry_max)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (telegram_msg_id, channel_id, raw_text, action, symbol, sl, tp1, tp2, tp3, entry_min, entry_max))
+        INSERT INTO signals (telegram_msg_id, channel_id, raw_text, action, symbol, sl, tp1, tp2, tp3, entry_min, entry_max, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (telegram_msg_id, channel_id, raw_text, action, symbol, sl, tp1, tp2, tp3, entry_min, entry_max, user_id))
         signal_id = cursor.lastrowid
         conn.commit()
-        add_log("INFO", "listener", f"Inserted parsed signal {signal_id} ({action} {symbol}) from Telegram")
+        add_log("INFO", "listener", f"Inserted parsed signal {signal_id} ({action} {symbol}) from Telegram", user_id=user_id)
         return signal_id
     finally:
         conn.close()
 
-def get_recent_signals(limit=20):
+def get_recent_signals(limit=20, user_id=None):
     conn = get_db_connection()
     try:
-        rows = conn.execute("SELECT * FROM signals ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        if user_id is not None:
+            rows = conn.execute("SELECT * FROM signals WHERE user_id = ? ORDER BY id DESC LIMIT ?", (user_id, limit)).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM signals ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
 
 def get_pending_signals_for_account(account_id):
     """
-    Get signals that have NOT been processed by this account yet.
+    Get signals that have NOT been processed by this account yet, and belong to the account's owner.
     """
     conn = get_db_connection()
     try:
         rows = conn.execute("""
         SELECT s.* FROM signals s
-        LEFT JOIN signal_executions se ON s.id = se.signal_id AND se.account_id = ?
-        WHERE se.signal_id IS NULL
+        JOIN accounts a ON a.id = ?
+        LEFT JOIN signal_executions se ON s.id = se.signal_id AND se.account_id = a.id
+        WHERE se.signal_id IS NULL AND s.user_id = a.user_id
         ORDER BY s.id ASC
         """, (account_id,)).fetchall()
         return [dict(r) for r in rows]
@@ -370,6 +423,10 @@ def mark_signal_executed(account_id, signal_id, status, error_msg=None):
 def add_trade(account_id, signal_id, ticket, symbol, action, volume, sl, tp1, tp2, tp3, tp1_lots, tp2_lots, tp3_lots, open_price, status='open'):
     conn = get_db_connection()
     try:
+        # Get user_id for logging
+        account = conn.execute("SELECT user_id FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        user_id = account["user_id"] if account else None
+
         conn.execute("""
         INSERT INTO trades (
             account_id, signal_id, ticket, symbol, action, volume, sl, tp1, tp2, tp3,
@@ -382,9 +439,9 @@ def add_trade(account_id, signal_id, ticket, symbol, action, volume, sl, tp1, tp
             float(tp1_lots), float(tp2_lots), float(tp3_lots), float(open_price), status
         ))
         conn.commit()
-        add_log("INFO", f"executor_acc_{account_id}", f"Recorded {status} trade ticket {ticket} ({symbol} {action}) in DB")
+        add_log("INFO", f"executor_acc_{account_id}", f"Recorded {status} trade ticket {ticket} ({symbol} {action}) in DB", user_id=user_id)
     except Exception as e:
-        add_log("ERROR", f"executor_acc_{account_id}", f"Failed to record trade ticket {ticket} in DB: {e}")
+        add_log("ERROR", f"executor_acc_{account_id}", f"Failed to record trade ticket {ticket} in DB: {e}", user_id=user_id if 'user_id' in locals() else None)
     finally:
         conn.close()
 
@@ -415,6 +472,14 @@ def get_cancel_requested_trades_for_account(account_id):
 def update_trade_tp_status(trade_id, tp1_hit=None, tp2_hit=None, tp3_hit=None, status=None, close_price=None, pnl=None, open_price=None, error_msg=None):
     conn = get_db_connection()
     try:
+        # Get user_id for logging
+        trade = conn.execute("SELECT account_id FROM trades WHERE id = ?", (trade_id,)).fetchone()
+        user_id = None
+        if trade:
+            account = conn.execute("SELECT user_id FROM accounts WHERE id = ?", (trade["account_id"],)).fetchone()
+            if account:
+                user_id = account["user_id"]
+
         updates = []
         params = []
         if tp1_hit is not None:
@@ -450,7 +515,7 @@ def update_trade_tp_status(trade_id, tp1_hit=None, tp2_hit=None, tp3_hit=None, s
         conn.execute(query, params)
         conn.commit()
     except Exception as e:
-        add_log("ERROR", "system", f"Failed to update trade ID {trade_id}: {e}")
+        add_log("ERROR", "system", f"Failed to update trade ID {trade_id}: {e}", user_id=user_id if 'user_id' in locals() else None)
     finally:
         conn.close()
 
@@ -475,6 +540,14 @@ def get_recent_trades(limit=50, user_id=None):
         conn.close()
 
 # User & Session management helpers
+def get_all_users():
+    conn = get_db_connection()
+    try:
+        rows = conn.execute("SELECT * FROM access_users").fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
 def hash_password(password: str, salt: str = None) -> str:
     if salt is None:
         salt = uuid.uuid4().hex

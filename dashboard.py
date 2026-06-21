@@ -179,10 +179,11 @@ async def signal_checker(symbol: str = "XAUUSD", action: str = "BUY", current_us
             sl=None,
             tp1=None,
             tp2=None,
-            tp3=None
+            tp3=None,
+            user_id=current_user
         )
         
-        add_log("INFO", f"dashboard_user_{current_user}", f"Injected manual test signal {signal_id} ({action} {symbol}) via /signal_checker")
+        add_log("INFO", f"dashboard_user_{current_user}", f"Injected manual test signal {signal_id} ({action} {symbol}) via /signal_checker", user_id=current_user)
         return {
             "status": "success",
             "message": f"Test signal injected successfully.",
@@ -412,7 +413,7 @@ async def api_cancel_all_trades(current_user: int = Depends(get_current_user)):
 
 @app.get("/api/signals")
 async def api_get_signals(current_user: int = Depends(get_current_user)):
-    return get_recent_signals(20)
+    return get_recent_signals(20, user_id=current_user)
 
 @app.post("/api/signals")
 async def api_add_manual_signal(sig: SignalCreate, current_user: int = Depends(get_current_user)):
@@ -455,10 +456,11 @@ async def api_add_manual_signal(sig: SignalCreate, current_user: int = Depends(g
             tp2=sig.tp2,
             tp3=sig.tp3,
             entry_min=sig.entry_min,
-            entry_max=sig.entry_max
+            entry_max=sig.entry_max,
+            user_id=current_user
         )
         
-        add_log("INFO", f"dashboard_user_{current_user}", f"Manual signal {signal_id} ({action} {symbol}) added from dashboard UI")
+        add_log("INFO", f"dashboard_user_{current_user}", f"Manual signal {signal_id} ({action} {symbol}) added from dashboard UI", user_id=current_user)
         return {"status": "success", "message": "Manual signal created successfully", "signal_id": signal_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -469,7 +471,7 @@ async def api_get_logs(current_user: int = Depends(get_current_user)):
 
 @app.get("/api/settings")
 async def api_get_settings(current_user: int = Depends(get_current_user)):
-    settings = get_settings()
+    settings = get_settings(user_id=current_user)
     # Monitored channels are stored as JSON string
     try:
         monitored_channels = json.loads(settings.get("monitored_channels", "[]"))
@@ -490,13 +492,13 @@ async def api_save_settings(settings: SettingsUpdate, current_user: int = Depend
         "api_hash": settings.api_hash.strip(),
         "phone": settings.phone.strip(),
         "monitored_channels": json.dumps(settings.monitored_channels)
-    })
+    }, user_id=current_user)
     return {"status": "success", "message": "Settings saved successfully."}
 
 @app.post("/api/telegram/send_code")
 async def api_telegram_send_code(payload: TelegramCodeSend, current_user: int = Depends(get_current_user)):
     phone = payload.phone.strip()
-    settings = get_settings()
+    settings = get_settings(user_id=current_user)
     api_id_str = settings.get("api_id", "")
     api_hash = settings.get("api_hash", "")
     
@@ -509,7 +511,7 @@ async def api_telegram_send_code(payload: TelegramCodeSend, current_user: int = 
         raise HTTPException(status_code=400, detail="API ID must be an integer.")
         
     # Build session file path
-    session_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "telegram"))
+    session_path = os.path.abspath(os.path.join(os.path.dirname(__file__), f"telegram_user_{current_user}"))
     
     # Instantiate client
     client = TelegramClient(session_path, api_id, api_hash)
@@ -519,16 +521,17 @@ async def api_telegram_send_code(payload: TelegramCodeSend, current_user: int = 
         # Request code
         result = await client.send_code_request(phone)
         
-        # Save client and hash in-memory
-        active_logins[phone] = {
+        # Save client, hash and phone in-memory by current_user ID
+        active_logins[current_user] = {
             "client": client,
-            "hash": result.phone_code_hash
+            "hash": result.phone_code_hash,
+            "phone": phone
         }
         
-        add_log("INFO", f"dashboard_user_{current_user}", f"Sent verification code to {phone}")
+        add_log("INFO", f"dashboard_user_{current_user}", f"Sent verification code to {phone}", user_id=current_user)
         return {"status": "success", "message": "Code sent successfully."}
     except Exception as e:
-        add_log("ERROR", f"dashboard_user_{current_user}", f"Failed to send Telegram code to {phone}: {e}")
+        add_log("ERROR", f"dashboard_user_{current_user}", f"Failed to send Telegram code to {phone}: {e}", user_id=current_user)
         # Make sure to disconnect if active
         if client:
             await client.disconnect()
@@ -540,10 +543,10 @@ async def api_telegram_login(payload: TelegramLogin, current_user: int = Depends
     code = payload.code.strip()
     password = payload.password.strip() if payload.password else None
     
-    if phone not in active_logins:
+    if current_user not in active_logins or active_logins[current_user]["phone"] != phone:
         raise HTTPException(status_code=400, detail="Verification session expired or not found. Please resend code.")
         
-    login_data = active_logins[phone]
+    login_data = active_logins[current_user]
     client = login_data["client"]
     phone_code_hash = login_data["hash"]
     
@@ -563,19 +566,19 @@ async def api_telegram_login(payload: TelegramLogin, current_user: int = Depends
                 })
                 
         # Successful login
-        save_settings({"telegram_status": "connected", "phone": phone})
-        add_log("INFO", f"dashboard_user_{current_user}", f"Successfully logged into Telegram account {phone}")
+        save_settings({"telegram_status": "connected", "phone": phone}, user_id=current_user)
+        add_log("INFO", f"dashboard_user_{current_user}", f"Successfully logged into Telegram account {phone}", user_id=current_user)
         
         # Clean up temporary storage and disconnect client
         # Note: Disconnect will let the separate listener process claim the session lock
         await client.disconnect()
-        del active_logins[phone]
+        del active_logins[current_user]
         
         return {"status": "success", "message": "Logged into Telegram successfully."}
     except Exception as e:
-        add_log("ERROR", f"dashboard_user_{current_user}", f"Failed to complete Telegram login for {phone}: {e}")
+        add_log("ERROR", f"dashboard_user_{current_user}", f"Failed to complete Telegram login for {phone}: {e}", user_id=current_user)
         # Disconnect client
         await client.disconnect()
-        if phone in active_logins:
-            del active_logins[phone]
+        if current_user in active_logins:
+            del active_logins[current_user]
         raise HTTPException(status_code=500, detail=str(e))
