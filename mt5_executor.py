@@ -498,17 +498,43 @@ def process_cancel_requests(account):
     login = int(account["login"])
     
     cancel_trades = get_cancel_requested_trades_for_account(account_id)
+    if not cancel_trades:
+        return
+        
+    # Get all active orders from MT5
+    orders = mt5.orders_get()
+    if orders is None:
+        err = mt5.last_error()
+        if err[0] != 1:  # Connection loss or terminal error
+            add_log("WARNING", f"executor_acc_{login}", f"Could not retrieve active orders from MT5 for cancellation checks: {err}")
+            return
+        orders = ()
+
+    # Get all active positions from MT5
+    positions = mt5.positions_get()
+    if positions is None:
+        positions = ()
+
     for trade in cancel_trades:
         ticket = int(trade["ticket"])
         symbol = resolve_symbol(trade["symbol"])
         
         # Check if the order is still active in MT5
-        orders = mt5.orders_get(ticket=ticket)
-        
-        if not orders:
+        active_order = None
+        for o in orders:
+            if o.ticket == ticket:
+                active_order = o
+                break
+                
+        if not active_order:
             # If not in active pending orders, it might have already triggered and become a position
-            positions = mt5.positions_get(ticket=ticket)
-            if positions:
+            active_position = None
+            for p in positions:
+                if p.ticket == ticket or getattr(p, "identifier", None) == ticket:
+                    active_position = p
+                    break
+                    
+            if active_position:
                 update_trade_tp_status(
                     trade_id=trade["id"],
                     status="open"
