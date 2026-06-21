@@ -341,7 +341,7 @@ async def api_toggle_account(account_id: int, request: Request, current_user: in
     is_active = data.get("is_active", True)
     set_account_active(account_id, is_active)
     status_str = "activated" if is_active else "deactivated"
-    add_log("INFO", f"dashboard_user_{current_user}", f"Account ID {account_id} has been {status_str}")
+    add_log("INFO", f"dashboard_user_{current_user}", f"Account ID {account_id} has been {status_str}", user_id=current_user)
     return {"status": "success", "message": f"Account {status_str}."}
 
 @app.delete("/api/accounts/{account_id}")
@@ -376,7 +376,7 @@ async def api_cancel_trade(trade_id: int, current_user: int = Depends(get_curren
         conn.execute("UPDATE trades SET status = 'cancel_requested', last_updated = CURRENT_TIMESTAMP WHERE id = ?", (trade_id,))
         conn.commit()
         
-        add_log("INFO", f"dashboard_user_{current_user}", f"Cancel requested for pending trade ID {trade_id} (ticket {trade['ticket']})")
+        add_log("INFO", f"dashboard_user_{current_user}", f"Cancel requested for pending trade ID {trade_id} (ticket {trade['ticket']})", user_id=current_user)
         return {"status": "success", "message": "Cancel request submitted successfully"}
     except HTTPException:
         raise
@@ -404,7 +404,7 @@ async def api_cancel_all_trades(current_user: int = Depends(get_current_user)):
         """, (current_user,))
         conn.commit()
         
-        add_log("INFO", f"dashboard_user_{current_user}", f"Cancel requested for all {pending_count} pending orders")
+        add_log("INFO", f"dashboard_user_{current_user}", f"Cancel requested for all {pending_count} pending orders", user_id=current_user)
         return {"status": "success", "message": f"Cancel request submitted for all {pending_count} pending orders"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

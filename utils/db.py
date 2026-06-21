@@ -291,7 +291,13 @@ def get_account(account_id):
 
 def update_account_status(login, balance, equity, status, error=None):
     conn = get_db_connection()
+    user_id = None
     try:
+        # Fetch user_id for logging
+        account = conn.execute("SELECT user_id FROM accounts WHERE login = ?", (int(login),)).fetchone()
+        if account:
+            user_id = account["user_id"]
+
         conn.execute("""
         UPDATE accounts
         SET balance = ?, equity = ?, connection_status = ?, last_error = ?, last_updated = CURRENT_TIMESTAMP
@@ -299,16 +305,20 @@ def update_account_status(login, balance, equity, status, error=None):
         """, (float(balance), float(equity), status, error, int(login)))
         conn.commit()
     except Exception as e:
-        add_log("ERROR", "system", f"Failed to update status for account {login}: {e}")
+        add_log("ERROR", "system", f"Failed to update status for account {login}: {e}", user_id=user_id)
     finally:
         conn.close()
 
 def delete_account(account_id):
     conn = get_db_connection()
     try:
+        # Get user_id before deleting
+        account = conn.execute("SELECT user_id FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        user_id = account["user_id"] if account else None
+
         conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
         conn.commit()
-        add_log("INFO", "system", f"Deleted account ID {account_id} from database")
+        add_log("INFO", "system", f"Deleted account ID {account_id} from database", user_id=user_id)
         return True
     finally:
         conn.close()

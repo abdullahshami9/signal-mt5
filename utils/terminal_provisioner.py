@@ -283,7 +283,7 @@ def sync_and_provision_all_accounts():
 
             if should_provision:
                 try:
-                    add_log("INFO", "system", f"Provisioning isolated MT5 terminal for account {login}...")
+                    add_log("INFO", "system", f"Provisioning isolated MT5 terminal for account {login}...", user_id=acc["user_id"])
                     # Terminate executor and terminal first to release file locks
                     terminate_executor_and_terminal(login, acc["id"], target_path)
                     time.sleep(1.0)
@@ -296,9 +296,9 @@ def sync_and_provision_all_accounts():
                         WHERE id = ?
                     """, (new_path, acc["id"]))
                     conn.commit()
-                    add_log("INFO", "system", f"Successfully provisioned isolated terminal for account {login} at {new_path}")
+                    add_log("INFO", "system", f"Successfully provisioned isolated terminal for account {login} at {new_path}", user_id=acc["user_id"])
                 except Exception as e:
-                    add_log("ERROR", "system", f"Failed to provision terminal for account {login}: {e}")
+                    add_log("ERROR", "system", f"Failed to provision terminal for account {login}: {e}", user_id=acc["user_id"])
                     # Update error in DB so it shows on the dashboard
                     conn.execute("""
                         UPDATE accounts
