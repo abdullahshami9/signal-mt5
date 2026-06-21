@@ -106,41 +106,67 @@ def connect_mt5(account):
         update_account_status(login, 0, 0, "connected", f"Account info failed: {err}")
         return True
 
+SYMBOL_CROSS_MAPPINGS = {
+    "XAUUSD": ["GOLD", "XAUUSD"],
+    "GOLD": ["XAUUSD", "GOLD"],
+    "XAGUSD": ["SILVER", "XAGUSD"],
+    "SILVER": ["XAGUSD", "SILVER"],
+    "USOIL": ["WTI", "OIL", "USOIL"],
+    "WTI": ["USOIL", "OIL", "WTI"],
+    "OIL": ["USOIL", "WTI", "OIL"],
+    "US30": ["DJ30", "DOWJONES", "US30"],
+    "DJ30": ["US30", "DOWJONES", "DJ30"],
+    "DOWJONES": ["US30", "DJ30", "DOWJONES"],
+    "NAS100": ["USTEC", "US100", "NAS100"],
+    "USTEC": ["NAS100", "US100", "USTEC"],
+    "US100": ["NAS100", "USTEC", "US100"],
+    "SPX500": ["US500", "SPX", "SPX500"],
+    "US500": ["SPX500", "SPX", "US500"],
+    "SPX": ["SPX500", "US500", "SPX"],
+    "GER30": ["DE30", "DAX", "GER40", "DE40", "GER30"],
+    "DE30": ["GER30", "DAX", "GER40", "DE40", "DE30"],
+    "DAX": ["GER30", "DE30", "GER40", "DE40", "DAX"],
+    "GER40": ["GER30", "DE30", "DAX", "DE40", "GER40"],
+    "DE40": ["GER30", "DE30", "DAX", "GER40", "DE40"]
+}
+
 def resolve_symbol(symbol):
     """
     Resolves the symbol name by checking if it exists directly on the account.
-    If not, tries prefix and suffix matches (e.g. 'XAUUSD' -> 'XAUUSD.c').
+    Supports suffix/prefix modifications (e.g. 'XAUUSD' -> 'XAUUSD.c') and
+    cross-broker name mappings (e.g. 'XAUUSD' -> 'GOLD' on XM).
     """
-    # Try exact match first
-    if mt5.symbol_select(symbol, True):
-        return symbol
-        
-    # Standardize input symbol
+    # 1. Standardize input symbol
     clean = symbol.upper().replace("/", "").replace("-", "").strip()
-    if clean == "GOLD":
-        clean = "XAUUSD"
-        
-    # Try match with normalized symbol
-    if mt5.symbol_select(clean, True):
-        return clean
-        
-    # If still not found, search the broker's symbols list
+    
+    # Get all potential names to try
+    targets = SYMBOL_CROSS_MAPPINGS.get(clean, [clean])
+    
+    # 2. Try exact matches for all mapping targets
+    for target in targets:
+        if mt5.symbol_select(target, True):
+            return target
+            
+    # 3. Retrieve all symbols to search for prefix/suffix variations
     symbols = mt5.symbols_get()
     if symbols:
-        # Match exactly normalized
-        for s in symbols:
-            name_upper = s.name.upper()
-            if name_upper == clean:
-                if mt5.symbol_select(s.name, True):
-                    return s.name
-                    
-        # Match by prefix/suffix
-        for s in symbols:
-            name_upper = s.name.upper()
-            if name_upper.startswith(clean) or clean.startswith(name_upper):
-                if mt5.symbol_select(s.name, True):
-                    return s.name
-                    
+        # Check for exact matches in full symbol database
+        for target in targets:
+            for s in symbols:
+                if s.name.upper() == target:
+                    if mt5.symbol_select(s.name, True):
+                        return s.name
+                        
+        # Check for prefix/suffix matches (e.g. XAUUSD matching XAUUSD.c, or GOLD matching GOLD.gr)
+        # We limit the length difference to <= 5 to prevent matching unrelated long-named symbols (like stocks)
+        for target in targets:
+            for s in symbols:
+                name_upper = s.name.upper()
+                if name_upper.startswith(target) or target.startswith(name_upper):
+                    if abs(len(s.name) - len(target)) <= 5:
+                        if mt5.symbol_select(s.name, True):
+                            return s.name
+                        
     return symbol
 
 def process_trade_signal(account, signal):
