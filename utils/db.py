@@ -143,6 +143,124 @@ class MySQLConnectionAdapter:
         self._conn.close()
 
 
+import sqlite3
+import pymysql
+import pymysql.err
+
+class SQLiteRow:
+    def __init__(self, cursor, row):
+        self._keys = [col[0] for col in cursor.description] if cursor.description else []
+        self._values = row
+        self._dict = dict(zip(self._keys, row))
+        
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._values[key]
+        return self._dict[key]
+        
+    def keys(self):
+        return self._keys
+        
+    def values(self):
+        return self._values
+        
+    def items(self):
+        return self._dict.items()
+        
+    def __iter__(self):
+        return iter(self._values)
+        
+    def __len__(self):
+        return len(self._values)
+        
+    def __repr__(self):
+        return repr(self._values)
+
+
+class SQLiteCursorAdapter:
+    def __init__(self, cursor, row_factory=None):
+        self._cursor = cursor
+        self.row_factory = row_factory
+
+    @property
+    def description(self):
+        return self._cursor.description
+
+    @property
+    def lastrowid(self):
+        return self._cursor.lastrowid
+
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
+
+    def execute(self, sql, parameters=()):
+        self._cursor.execute(sql, parameters)
+        return self
+
+    def executemany(self, sql, seq_of_parameters):
+        self._cursor.executemany(sql, seq_of_parameters)
+        return self
+
+    def _wrap_row(self, row):
+        if row is None:
+            return None
+        if self.row_factory:
+            return self.row_factory(self, row)
+        return row
+
+    def fetchone(self):
+        row = self._cursor.fetchone()
+        return self._wrap_row(row)
+
+    def fetchall(self):
+        rows = self._cursor.fetchall()
+        return [self._wrap_row(r) for r in rows]
+
+    def fetchmany(self, size=None):
+        rows = self._cursor.fetchmany(size) if size is not None else self._cursor.fetchmany()
+        return [self._wrap_row(r) for r in rows]
+
+    def close(self):
+        self._cursor.close()
+
+
+class SQLiteConnectionAdapter:
+    def __init__(self, conn):
+        self._conn = conn
+        self.row_factory = None
+
+    def cursor(self):
+        return SQLiteCursorAdapter(self._conn.cursor(), self.row_factory)
+
+    def execute(self, sql, parameters=()):
+        sql_upper = sql.strip().upper() if isinstance(sql, str) else ""
+        if any(sql_upper.startswith(w) for w in ["INSERT", "UPDATE", "DELETE", "REPLACE"]):
+            global _local_changes_pending
+            _local_changes_pending = True
+        cursor = self.cursor()
+        cursor.execute(sql, parameters)
+        return cursor
+
+    def executemany(self, sql, seq_of_parameters):
+        sql_upper = sql.strip().upper() if isinstance(sql, str) else ""
+        if any(sql_upper.startswith(w) for w in ["INSERT", "UPDATE", "DELETE", "REPLACE"]):
+            global _local_changes_pending
+            _local_changes_pending = True
+        cursor = self.cursor()
+        cursor.executemany(sql, seq_of_parameters)
+        return cursor
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+
 if PROD_DB:
     DB_HOST = os.getenv("DB_HOST_PROD", "13.49.223.231")
     DB_PORT = int(os.getenv("DB_PORT_PROD", 3306))
@@ -156,15 +274,31 @@ else:
     DB_PASSWORD = os.getenv("DB_PASSWORD_LOCAL")
     DB_NAME = os.getenv("DB_NAME_LOCAL")
 
-import pymysql
-import pymysql.err
+# Unified exceptions that work with both databases
+OperationalError = (sqlite3.OperationalError, pymysql.err.OperationalError)
+IntegrityError = (sqlite3.IntegrityError, pymysql.err.IntegrityError)
+DatabaseError = (sqlite3.DatabaseError, pymysql.err.DatabaseError)
 
-OperationalError = pymysql.err.OperationalError
-IntegrityError = pymysql.err.IntegrityError
-DatabaseError = pymysql.err.DatabaseError
-RowFactory = MySQLRow
+_local_changes_pending = True
+_last_sync_time = 0.0
 
-def get_db_connection():
+def get_local_db_path():
+    is_frozen = getattr(sys, 'frozen', False)
+    if is_frozen:
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+    return os.path.join(base_dir, "local_storage.db")
+
+def get_local_db_connection():
+    db_path = get_local_db_path()
+    raw_conn = sqlite3.connect(db_path, timeout=30.0)
+    raw_conn.execute("PRAGMA foreign_keys = ON")
+    conn = SQLiteConnectionAdapter(raw_conn)
+    conn.row_factory = SQLiteRow
+    return conn
+
+def get_live_db_connection():
     raw_conn = pymysql.connect(
         host=DB_HOST,
         port=DB_PORT,
@@ -177,11 +311,15 @@ def get_db_connection():
     raw_conn.select_db(DB_NAME)
     
     conn = MySQLConnectionAdapter(raw_conn)
-    conn.row_factory = RowFactory
+    conn.row_factory = MySQLRow
     return conn
 
-def init_db():
-    conn = get_db_connection()
+def get_db_connection():
+    # Rerouted operational connection to local SQLite
+    return get_local_db_connection()
+
+def init_live_db():
+    conn = get_live_db_connection()
     cursor = conn.cursor()
     
     # Access Users table for parent login
@@ -384,6 +522,167 @@ def init_db():
         
     conn.commit()
     conn.close()
+
+def init_local_sqlite_db():
+    db_path = get_local_db_path()
+    raw_conn = sqlite3.connect(db_path)
+    raw_conn.execute("PRAGMA foreign_keys = ON")
+    cursor = raw_conn.cursor()
+    
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS access_users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        is_blocked INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS user_sessions (
+        session_id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        login INTEGER UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        server TEXT NOT NULL,
+        terminal_path TEXT NOT NULL,
+        risk_pct REAL DEFAULT 1.0,
+        is_active INTEGER DEFAULT 1,
+        balance REAL DEFAULT 0.0,
+        equity REAL DEFAULT 0.0,
+        connection_status TEXT DEFAULT 'disconnected',
+        last_error TEXT,
+        name TEXT,
+        payment_date TEXT,
+        user_id INTEGER,
+        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS signals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_msg_id INTEGER,
+        channel_id INTEGER,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        raw_text TEXT NOT NULL,
+        action TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        sl REAL,
+        tp1 REAL,
+        tp2 REAL,
+        tp3 REAL,
+        entry_min REAL,
+        entry_max REAL,
+        status TEXT DEFAULT 'pending',
+        user_id INTEGER,
+        FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS trades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL,
+        signal_id INTEGER NOT NULL,
+        ticket INTEGER,
+        symbol TEXT NOT NULL,
+        action TEXT NOT NULL,
+        volume REAL NOT NULL,
+        sl REAL,
+        tp1 REAL,
+        tp2 REAL,
+        tp3 REAL,
+        tp1_lots REAL DEFAULT 0.0,
+        tp2_lots REAL DEFAULT 0.0,
+        tp3_lots REAL DEFAULT 0.0,
+        tp1_hit INTEGER DEFAULT 0,
+        tp2_hit INTEGER DEFAULT 0,
+        tp3_hit INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'open',
+        open_price REAL,
+        close_price REAL,
+        pnl REAL DEFAULT 0.0,
+        error_msg TEXT,
+        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
+        FOREIGN KEY (signal_id) REFERENCES signals(id) ON DELETE CASCADE
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS signal_executions (
+        account_id INTEGER NOT NULL,
+        signal_id INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        error_msg TEXT,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (account_id, signal_id),
+        FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
+        FOREIGN KEY (signal_id) REFERENCES signals(id) ON DELETE CASCADE
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS settings (
+        user_id INTEGER NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT NOT NULL,
+        PRIMARY KEY (user_id, key),
+        FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        level TEXT NOT NULL,
+        sender TEXT NOT NULL,
+        message TEXT NOT NULL,
+        user_id INTEGER,
+        synced INTEGER DEFAULT 0,
+        FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
+    )
+    """)
+
+    cursor.execute("SELECT COUNT(*) FROM access_users")
+    if cursor.fetchone()[0] == 0:
+        default_username = "vendor1"
+        default_pwd_hash = hash_password("vendor123")
+        cursor.execute("INSERT OR IGNORE INTO access_users (username, password_hash) VALUES (?, ?)", (default_username, default_pwd_hash))
+
+    cursor.execute("SELECT COUNT(*) FROM settings WHERE user_id = 1")
+    if cursor.fetchone()[0] == 0:
+        default_settings = {
+            "api_id": "",
+            "api_hash": "",
+            "phone": "",
+            "monitored_channels": "[]",
+            "telegram_status": "disconnected"
+        }
+        for k, v in default_settings.items():
+            cursor.execute("INSERT OR IGNORE INTO settings (user_id, key, value) VALUES (1, ?, ?)", (k, v))
+
+    raw_conn.commit()
+    raw_conn.close()
+
+def init_db():
+    init_local_sqlite_db()
+    try:
+        init_live_db()
+    except Exception as e:
+        print(f"Warning: Could not initialize live DB on AWS: {e}")
 
 # Logs helpers
 def add_log(level, sender, message, user_id=None):
@@ -736,8 +1035,47 @@ def verify_password(password: str, stored_hash: str) -> bool:
     except Exception:
         return False
 
+_session_cache = {}
+
+def sync_user_to_local(user_data):
+    local_conn = get_local_db_connection()
+    try:
+        local_conn.execute("""
+            INSERT OR REPLACE INTO access_users (id, username, password_hash, is_blocked)
+            VALUES (?, ?, ?, ?)
+        """, (user_data["id"], user_data["username"], user_data["password_hash"], user_data["is_blocked"]))
+        local_conn.commit()
+    except Exception as e:
+        print(f"Error syncing user to local: {e}")
+    finally:
+        local_conn.close()
+
+def sync_session_to_local(session_token, user_id):
+    local_conn = get_local_db_connection()
+    try:
+        local_conn.execute("""
+            INSERT OR REPLACE INTO user_sessions (session_id, user_id)
+            VALUES (?, ?)
+        """, (session_token, user_id))
+        local_conn.commit()
+    except Exception as e:
+        print(f"Error syncing session to local: {e}")
+    finally:
+        local_conn.close()
+
+def update_local_user_block_status(user_id, is_blocked):
+    local_conn = get_local_db_connection()
+    try:
+        local_conn.execute("UPDATE access_users SET is_blocked = ? WHERE id = ?", (is_blocked, user_id))
+        local_conn.commit()
+    except Exception as e:
+        print(f"Error updating local user block status: {e}")
+    finally:
+        local_conn.close()
+
 def create_user(username, password):
-    conn = get_db_connection()
+    # Registration runs on live AWS DB
+    conn = get_live_db_connection()
     try:
         cursor = conn.cursor()
         pwd_hash = hash_password(password)
@@ -750,49 +1088,347 @@ def create_user(username, password):
         conn.close()
 
 def authenticate_user(username, password):
-    conn = get_db_connection()
+    # Login authentication runs on live AWS DB
+    conn = get_live_db_connection()
     try:
         row = conn.execute("SELECT * FROM access_users WHERE username = ?", (username,)).fetchone()
         if row and verify_password(password, row["password_hash"]):
             if row["is_blocked"] or row["is_blocked"] == 1:
+                update_local_user_block_status(row["id"], 1)
                 return {"blocked": True}
-            return dict(row)
+            
+            user_data = dict(row)
+            sync_user_to_local(user_data)
+            return user_data
         return None
     finally:
         conn.close()
 
 def create_session(user_id):
-    conn = get_db_connection()
+    # Session creation runs on live AWS DB
+    conn = get_live_db_connection()
     try:
         session_token = uuid.uuid4().hex
         conn.execute("INSERT INTO user_sessions (session_id, user_id) VALUES (?, ?)", (session_token, user_id))
         conn.commit()
+        
+        # Sync session locally
+        sync_session_to_local(session_token, user_id)
         return session_token
     finally:
         conn.close()
 
 def verify_session(session_token):
-    conn = get_db_connection()
+    # Check cache first (15 second in-memory cache to avoid heavy live DB connection on every request)
+    now = time.time()
+    if session_token in _session_cache:
+        user_id, expiry = _session_cache[session_token]
+        if now < expiry:
+            return user_id
+            
+    # Session verification runs on live AWS DB
+    conn = None
     try:
+        conn = get_live_db_connection()
         row = conn.execute("""
-            SELECT us.user_id, au.is_blocked 
+            SELECT us.user_id, au.username, au.password_hash, au.is_blocked 
             FROM user_sessions us
             JOIN access_users au ON us.user_id = au.id
             WHERE us.session_id = ?
         """, (session_token,)).fetchone()
         if row:
-            if row["is_blocked"] or row["is_blocked"] == 1:
+            user_id = row["user_id"]
+            is_blocked = 1 if row["is_blocked"] else 0
+            
+            if is_blocked:
+                update_local_user_block_status(user_id, 1)
+                _session_cache.pop(session_token, None)
                 return None
-            return row["user_id"]
+                
+            # Sync user/session locally
+            sync_user_to_local({
+                "id": user_id,
+                "username": row["username"],
+                "password_hash": row["password_hash"],
+                "is_blocked": is_blocked
+            })
+            sync_session_to_local(session_token, user_id)
+            
+            # Cache session for 15 seconds
+            _session_cache[session_token] = (user_id, now + 15)
+            return user_id
+            
+        _session_cache.pop(session_token, None)
         return None
+    except Exception as e:
+        # Fallback to local session verification in case of network or AWS database issues
+        print(f"Warning: AWS session verification failed, falling back to local DB: {e}")
+        local_conn = get_local_db_connection()
+        try:
+            local_row = local_conn.execute("""
+                SELECT us.user_id, au.is_blocked
+                FROM user_sessions us
+                JOIN access_users au ON us.user_id = au.id
+                WHERE us.session_id = ?
+            """, (session_token,)).fetchone()
+            if local_row:
+                if local_row["is_blocked"] or local_row["is_blocked"] == 1:
+                    return None
+                return local_row["user_id"]
+            return None
+        except Exception:
+            return None
+        finally:
+            local_conn.close()
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 def delete_session(session_token):
-    conn = get_db_connection()
+    # Session deletion runs on live AWS DB
+    _session_cache.pop(session_token, None)
+    
+    # Delete locally first
+    local_conn = get_local_db_connection()
+    try:
+        local_conn.execute("DELETE FROM user_sessions WHERE session_id = ?", (session_token,))
+        local_conn.commit()
+    except Exception:
+        pass
+    finally:
+        local_conn.close()
+        
+    conn = get_live_db_connection()
     try:
         conn.execute("DELETE FROM user_sessions WHERE session_id = ?", (session_token,))
         conn.commit()
         return True
     finally:
         conn.close()
+
+def sync_data_to_live(user_id, force=False):
+    global _last_sync_time, _local_changes_pending
+    now = time.time()
+    
+    # Rate limit check: skip if force=False and we synced in the last 60 seconds
+    if not force and (now - _last_sync_time < 60):
+        return True, "Sync skipped due to rate limiting (once per 60 seconds)."
+        
+    if not force and not _local_changes_pending:
+        return True, "No local changes to sync."
+        
+    local_conn = get_local_db_connection()
+    try:
+        live_conn = get_live_db_connection()
+    except Exception as e:
+        local_conn.close()
+        return False, f"Could not connect to live AWS database: {e}"
+        
+    try:
+        # 0. Sync block status from live to local
+        live_user = live_conn.execute("SELECT is_blocked FROM access_users WHERE id = %s", (user_id,)).fetchone()
+        if live_user:
+            is_blocked = 1 if live_user["is_blocked"] else 0
+            local_conn.execute("UPDATE access_users SET is_blocked = ? WHERE id = ?", (is_blocked, user_id))
+            local_conn.commit()
+            if is_blocked:
+                # User is blocked, stop sync
+                return True, "Sync aborted: User is blocked centrally."
+                
+        # 1. Sync settings
+        local_settings = local_conn.execute("SELECT * FROM settings WHERE user_id = ?", (user_id,)).fetchall()
+        for s in local_settings:
+            live_conn.execute("""
+                INSERT INTO settings (user_id, `key`, `value`)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)
+            """, (user_id, s["key"], s["value"]))
+            
+        # 2. Sync accounts
+        local_accounts = local_conn.execute("SELECT * FROM accounts WHERE user_id = ?", (user_id,)).fetchall()
+        local_logins = []
+        for acc in local_accounts:
+            login = acc["login"]
+            local_logins.append(login)
+            live_conn.execute("""
+                INSERT INTO accounts (login, password, server, terminal_path, risk_pct, is_active, balance, equity, connection_status, last_error, name, payment_date, user_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    password = VALUES(password),
+                    server = VALUES(server),
+                    terminal_path = VALUES(terminal_path),
+                    risk_pct = VALUES(risk_pct),
+                    is_active = VALUES(is_active),
+                    balance = VALUES(balance),
+                    equity = VALUES(equity),
+                    connection_status = VALUES(connection_status),
+                    last_error = VALUES(last_error),
+                    name = VALUES(name),
+                    payment_date = VALUES(payment_date),
+                    last_updated = CURRENT_TIMESTAMP
+            """, (
+                login, acc["password"], acc["server"], acc["terminal_path"],
+                acc["risk_pct"], acc["is_active"], acc["balance"], acc["equity"],
+                acc["connection_status"], acc["last_error"], acc["name"], acc["payment_date"], user_id
+            ))
+            
+        # Delete from live DB any accounts that were deleted locally
+        if local_logins:
+            placeholders = ", ".join(["%s"] * len(local_logins))
+            query = f"DELETE FROM accounts WHERE user_id = %s AND login NOT IN ({placeholders})"
+            live_conn.execute(query, [user_id] + local_logins)
+        else:
+            live_conn.execute("DELETE FROM accounts WHERE user_id = %s", (user_id,))
+            
+        # Map local account IDs to live account IDs (essential for trades/signal executions mapping)
+        live_accs = live_conn.execute("SELECT id, login FROM accounts WHERE user_id = %s", (user_id,)).fetchall()
+        live_acc_map = {r["login"]: r["id"] for r in live_accs}
+        local_acc_map = {acc["id"]: live_acc_map[acc["login"]] for acc in local_accounts if acc["login"] in live_acc_map}
+        
+        # 3. Sync signals
+        local_signals = local_conn.execute("SELECT * FROM signals WHERE user_id = ?", (user_id,)).fetchall()
+        local_sig_map = {} # local_signal_id -> live_signal_id
+        for sig in local_signals:
+            live_sig = None
+            if sig["telegram_msg_id"] not in (8888, 9999) and sig["channel_id"] != 0:
+                live_sig = live_conn.execute("""
+                    SELECT id FROM signals 
+                    WHERE user_id = %s AND channel_id = %s AND telegram_msg_id = %s
+                """, (user_id, sig["channel_id"], sig["telegram_msg_id"])).fetchone()
+            else:
+                live_sig = live_conn.execute("""
+                    SELECT id FROM signals 
+                    WHERE user_id = %s AND telegram_msg_id = %s AND action = %s AND symbol = %s 
+                      AND ABS(TIMESTAMPDIFF(SECOND, timestamp, %s)) < 3600
+                """, (user_id, sig["telegram_msg_id"], sig["action"], sig["symbol"], sig["timestamp"])).fetchone()
+                
+            if live_sig:
+                live_sig_id = live_sig["id"]
+            else:
+                cursor = live_conn.cursor()
+                cursor.execute("""
+                    INSERT INTO signals (telegram_msg_id, channel_id, timestamp, raw_text, action, symbol, sl, tp1, tp2, tp3, entry_min, entry_max, status, user_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    sig["telegram_msg_id"], sig["channel_id"], sig["timestamp"], sig["raw_text"],
+                    sig["action"], sig["symbol"], sig["sl"], sig["tp1"], sig["tp2"], sig["tp3"],
+                    sig["entry_min"], sig["entry_max"], sig["status"], user_id
+                ))
+                live_sig_id = cursor.lastrowid
+                cursor.close()
+                
+            local_sig_map[sig["id"]] = live_sig_id
+            
+        # 4. Sync trades
+        local_trades = []
+        if local_accounts:
+            local_acc_ids = [acc["id"] for acc in local_accounts]
+            placeholders = ", ".join(["?"] * len(local_acc_ids))
+            local_trades = local_conn.execute(f"SELECT * FROM trades WHERE account_id IN ({placeholders})", local_acc_ids).fetchall()
+            
+        for t in local_trades:
+            live_acc_id = local_acc_map.get(t["account_id"])
+            live_sig_id = local_sig_map.get(t["signal_id"])
+            
+            if not live_acc_id or not live_sig_id:
+                continue
+                
+            live_trade = None
+            if t["ticket"] and t["ticket"] != 0:
+                live_trade = live_conn.execute("""
+                    SELECT id FROM trades WHERE account_id = %s AND ticket = %s
+                """, (live_acc_id, t["ticket"])).fetchone()
+            else:
+                live_trade = live_conn.execute("""
+                    SELECT id FROM trades WHERE account_id = %s AND signal_id = %s AND ticket IS NULL
+                """, (live_acc_id, live_sig_id)).fetchone()
+                
+            if live_trade:
+                live_conn.execute("""
+                    UPDATE trades SET
+                        ticket = %s, symbol = %s, action = %s, volume = %s, sl = %s, tp1 = %s, tp2 = %s, tp3 = %s,
+                        tp1_lots = %s, tp2_lots = %s, tp3_lots = %s, tp1_hit = %s, tp2_hit = %s, tp3_hit = %s,
+                        status = %s, open_price = %s, close_price = %s, pnl = %s, error_msg = %s, last_updated = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                """, (
+                    t["ticket"], t["symbol"], t["action"], t["volume"], t["sl"], t["tp1"], t["tp2"], t["tp3"],
+                    t["tp1_lots"], t["tp2_lots"], t["tp3_lots"], t["tp1_hit"], t["tp2_hit"], t["tp3_hit"],
+                    t["status"], t["open_price"], t["close_price"], t["pnl"], t["error_msg"], live_trade["id"]
+                ))
+            else:
+                live_conn.execute("""
+                    INSERT INTO trades (
+                        account_id, signal_id, ticket, symbol, action, volume, sl, tp1, tp2, tp3,
+                        tp1_lots, tp2_lots, tp3_lots, tp1_hit, tp2_hit, tp3_hit, status, open_price,
+                        close_price, pnl, error_msg
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    live_acc_id, live_sig_id, t["ticket"], t["symbol"], t["action"], t["volume"],
+                    t["sl"], t["tp1"], t["tp2"], t["tp3"], t["tp1_lots"], t["tp2_lots"], t["tp3_lots"],
+                    t["tp1_hit"], t["tp2_hit"], t["tp3_hit"], t["status"], t["open_price"],
+                    t["close_price"], t["pnl"], t["error_msg"]
+                ))
+                
+        # 5. Sync signal_executions
+        local_executions = []
+        if local_accounts:
+            local_acc_ids = [acc["id"] for acc in local_accounts]
+            placeholders = ", ".join(["?"] * len(local_acc_ids))
+            local_executions = local_conn.execute(f"SELECT * FROM signal_executions WHERE account_id IN ({placeholders})", local_acc_ids).fetchall()
+            
+        for ex in local_executions:
+            live_acc_id = local_acc_map.get(ex["account_id"])
+            live_sig_id = local_sig_map.get(ex["signal_id"])
+            if live_acc_id and live_sig_id:
+                live_conn.execute("""
+                    INSERT INTO signal_executions (account_id, signal_id, status, error_msg, timestamp)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        status = VALUES(status),
+                        error_msg = VALUES(error_msg),
+                        timestamp = VALUES(timestamp)
+                """, (live_acc_id, live_sig_id, ex["status"], ex["error_msg"], ex["timestamp"]))
+                
+        # 6. Sync logs incrementally
+        local_logs = local_conn.execute("SELECT * FROM logs WHERE user_id = ? AND (synced = 0 OR synced IS NULL)", (user_id,)).fetchall()
+        for log in local_logs:
+            live_conn.execute("""
+                INSERT INTO logs (timestamp, level, sender, message, user_id)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (log["timestamp"], log["level"], log["sender"], log["message"], user_id))
+            
+        if local_logs:
+            log_ids = [l["id"] for l in local_logs]
+            placeholders = ", ".join(["?"] * len(log_ids))
+            local_conn.execute(f"UPDATE logs SET synced = 1 WHERE id IN ({placeholders})", log_ids)
+            local_conn.commit()
+            
+        # Reset local changes flag and update last sync timestamp on success
+        _local_changes_pending = False
+        _last_sync_time = now
+        return True, "Data synced to AWS successfully."
+    except Exception as e:
+        return False, f"Sync error: {e}"
+    finally:
+        local_conn.close()
+        live_conn.close()
+
+def sync_all_local_users_to_live():
+    global _local_changes_pending
+    if not _local_changes_pending:
+        return
+        
+    local_users = get_all_users()
+    synced_any = False
+    for u in local_users:
+        user_id = u["id"]
+        if not u["is_blocked"]:
+            try:
+                success, msg = sync_data_to_live(user_id)
+                if success and "synced" in msg.lower():
+                    synced_any = True
+            except Exception as e:
+                print(f"Background sync failed for user {user_id}: {e}")
+                
+    if synced_any:
+        _local_changes_pending = False

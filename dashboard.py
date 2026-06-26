@@ -15,7 +15,8 @@ from utils.db import (
     get_accounts, add_account, delete_account, set_account_active,
     get_recent_trades, get_recent_signals, get_recent_logs,
     get_settings, save_settings, add_log, add_signal, get_db_connection, get_account,
-    verify_session, authenticate_user, create_session, create_user, delete_session
+    verify_session, authenticate_user, create_session, create_user, delete_session,
+    sync_data_to_live, sync_all_local_users_to_live
 )
 
 app = FastAPI(title="Quanthropic.dev MT5 Copier Dashboard")
@@ -33,6 +34,37 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Idle tracking for background synchronization
+import time
+import threading
+
+last_request_time = time.time()
+
+@app.middleware("http")
+async def update_last_request_time(request: Request, call_next):
+    global last_request_time
+    last_request_time = time.time()
+    response = await call_next(request)
+    return response
+
+def background_sync_loop():
+    global last_request_time
+    # Initial sleep to allow the dashboard and executors to boot up fully
+    time.sleep(10)
+    while True:
+        try:
+            now = time.time()
+            # If the application has been idle for more than 15 seconds, trigger synchronization
+            if now - last_request_time > 15:
+                sync_all_local_users_to_live()
+        except Exception as e:
+            print(f"Background sync error: {e}")
+        time.sleep(30)
+
+@app.on_event("startup")
+async def startup_event():
+    threading.Thread(target=background_sync_loop, daemon=True).start()
 
 # Store in-memory Telethon login clients temporarily
 # Schema: { phone: {"client": TelegramClient, "hash": str} }
@@ -137,6 +169,13 @@ async def api_login(payload: LoginPayload):
         samesite="lax"
     )
     return response
+
+@app.post("/api/sync")
+async def api_trigger_sync(current_user: int = Depends(get_current_user)):
+    success, message = sync_data_to_live(current_user, force=True)
+    if not success:
+        raise HTTPException(status_code=500, detail=message)
+    return {"status": "success", "message": message}
 
 @app.post("/api/register")
 async def api_register(payload: RegisterPayload):
