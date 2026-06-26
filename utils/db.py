@@ -1045,10 +1045,19 @@ _session_cache = {}
 def sync_user_to_local(user_data):
     local_conn = get_local_db_connection()
     try:
-        local_conn.execute("""
-            INSERT OR REPLACE INTO access_users (id, username, password_hash, is_blocked)
-            VALUES (?, ?, ?, ?)
-        """, (user_data["id"], user_data["username"], user_data["password_hash"], user_data["is_blocked"]))
+        # Check if user already exists to avoid REPLACE (which causes ON DELETE CASCADE in SQLite)
+        exists = local_conn.execute("SELECT 1 FROM access_users WHERE id = ?", (user_data["id"],)).fetchone()
+        if exists:
+            local_conn.execute("""
+                UPDATE access_users 
+                SET username = ?, password_hash = ?, is_blocked = ?
+                WHERE id = ?
+            """, (user_data["username"], user_data["password_hash"], user_data["is_blocked"], user_data["id"]))
+        else:
+            local_conn.execute("""
+                INSERT INTO access_users (id, username, password_hash, is_blocked)
+                VALUES (?, ?, ?, ?)
+            """, (user_data["id"], user_data["username"], user_data["password_hash"], user_data["is_blocked"]))
         local_conn.commit()
     except Exception as e:
         print(f"Error syncing user to local: {e}")
@@ -1058,10 +1067,17 @@ def sync_user_to_local(user_data):
 def sync_session_to_local(session_token, user_id):
     local_conn = get_local_db_connection()
     try:
-        local_conn.execute("""
-            INSERT OR REPLACE INTO user_sessions (session_id, user_id)
-            VALUES (?, ?)
-        """, (session_token, user_id))
+        # Check if session already exists to avoid REPLACE
+        exists = local_conn.execute("SELECT 1 FROM user_sessions WHERE session_id = ?", (session_token,)).fetchone()
+        if exists:
+            local_conn.execute("""
+                UPDATE user_sessions SET user_id = ? WHERE session_id = ?
+            """, (user_id, session_token))
+        else:
+            local_conn.execute("""
+                INSERT INTO user_sessions (session_id, user_id)
+                VALUES (?, ?)
+            """, (session_token, user_id))
         local_conn.commit()
     except Exception as e:
         print(f"Error syncing session to local: {e}")
@@ -1077,6 +1093,140 @@ def update_local_user_block_status(user_id, is_blocked):
         print(f"Error updating local user block status: {e}")
     finally:
         local_conn.close()
+
+def pull_data_from_live(user_id):
+    """
+    Pulls data (settings, accounts, signals, trades, executions) from the live database
+    to the local database. This is used when a user logs in, to ensure they don't have
+    an empty local database that would overwrite/delete cloud data during subsequent syncs.
+    """
+    try:
+        live_conn = get_live_db_connection()
+    except Exception as e:
+        print(f"Warning: Could not connect to live AWS DB to pull data: {e}")
+        return False
+
+    local_conn = get_local_db_connection()
+    try:
+        # Disable changes pending trigger while pulling
+        global _local_changes_pending
+        original_pending = _local_changes_pending
+        
+        # 1. Pull settings
+        live_settings = live_conn.execute("SELECT * FROM settings WHERE user_id = %s", (user_id,)).fetchall()
+        for s in live_settings:
+            local_conn.execute("""
+                INSERT OR REPLACE INTO settings (user_id, `key`, `value`)
+                VALUES (?, ?, ?)
+            """, (user_id, s["key"], s["value"]))
+
+        # 2. Pull accounts
+        live_accounts = live_conn.execute("SELECT * FROM accounts WHERE user_id = %s", (user_id,)).fetchall()
+        live_account_ids = []
+        for acc in live_accounts:
+            live_account_ids.append(acc["id"])
+            existing = local_conn.execute("SELECT id FROM accounts WHERE login = ?", (acc["login"],)).fetchone()
+            if existing:
+                local_conn.execute("""
+                    UPDATE accounts SET
+                        password = ?, server = ?, terminal_path = ?, risk_pct = ?, is_active = ?,
+                        balance = ?, equity = ?, connection_status = ?, last_error = ?, name = ?,
+                        payment_date = ?, user_id = ?
+                    WHERE login = ?
+                """, (
+                    acc["password"], acc["server"], acc["terminal_path"], acc["risk_pct"], acc["is_active"],
+                    acc["balance"], acc["equity"], acc["connection_status"], acc["last_error"], acc["name"],
+                    acc["payment_date"], user_id, acc["login"]
+                ))
+            else:
+                local_conn.execute("""
+                    INSERT INTO accounts (id, login, password, server, terminal_path, risk_pct, is_active, balance, equity, connection_status, last_error, name, payment_date, user_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    acc["id"], acc["login"], acc["password"], acc["server"], acc["terminal_path"], acc["risk_pct"], acc["is_active"],
+                    acc["balance"], acc["equity"], acc["connection_status"], acc["last_error"], acc["name"],
+                    acc["payment_date"], user_id
+                ))
+
+        # 3. Pull signals
+        live_signals = live_conn.execute("SELECT * FROM signals WHERE user_id = %s", (user_id,)).fetchall()
+        live_signal_ids = []
+        for sig in live_signals:
+            live_signal_ids.append(sig["id"])
+            existing = local_conn.execute("SELECT id FROM signals WHERE id = ?", (sig["id"],)).fetchone()
+            if existing:
+                local_conn.execute("""
+                    UPDATE signals SET
+                        telegram_msg_id = ?, channel_id = ?, timestamp = ?, raw_text = ?, action = ?,
+                        symbol = ?, sl = ?, tp1 = ?, tp2 = ?, tp3 = ?, entry_min = ?, entry_max = ?,
+                        status = ?, user_id = ?
+                    WHERE id = ?
+                """, (
+                    sig["telegram_msg_id"], sig["channel_id"], sig["timestamp"], sig["raw_text"], sig["action"],
+                    sig["symbol"], sig["sl"], sig["tp1"], sig["tp2"], sig["tp3"], sig["entry_min"], sig["entry_max"],
+                    sig["status"], user_id, sig["id"]
+                ))
+            else:
+                local_conn.execute("""
+                    INSERT INTO signals (id, telegram_msg_id, channel_id, timestamp, raw_text, action, symbol, sl, tp1, tp2, tp3, entry_min, entry_max, status, user_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    sig["id"], sig["telegram_msg_id"], sig["channel_id"], sig["timestamp"], sig["raw_text"], sig["action"],
+                    sig["symbol"], sig["sl"], sig["tp1"], sig["tp2"], sig["tp3"], sig["entry_min"], sig["entry_max"],
+                    sig["status"], user_id
+                ))
+
+        # 4. Pull trades
+        if live_account_ids:
+            placeholders = ", ".join(["%s"] * len(live_account_ids))
+            live_trades = live_conn.execute(f"SELECT * FROM trades WHERE account_id IN ({placeholders})", live_account_ids).fetchall()
+            for t in live_trades:
+                existing = local_conn.execute("SELECT id FROM trades WHERE id = ?", (t["id"],)).fetchone()
+                if existing:
+                    local_conn.execute("""
+                        UPDATE trades SET
+                            account_id = ?, signal_id = ?, ticket = ?, symbol = ?, action = ?, volume = ?,
+                            sl = ?, tp1 = ?, tp2 = ?, tp3 = ?, tp1_lots = ?, tp2_lots = ?, tp3_lots = ?,
+                            tp1_hit = ?, tp2_hit = ?, tp3_hit = ?, status = ?, open_price = ?, close_price = ?,
+                            pnl = ?, error_msg = ?
+                        WHERE id = ?
+                    """, (
+                        t["account_id"], t["signal_id"], t["ticket"], t["symbol"], t["action"], t["volume"],
+                        t["sl"], t["tp1"], t["tp2"], t["tp3"], t["tp1_lots"], t["tp2_lots"], t["tp3_lots"],
+                        t["tp1_hit"], t["tp2_hit"], t["tp3_hit"], t["status"], t["open_price"], t["close_price"],
+                        t["pnl"], t["error_msg"], t["id"]
+                    ))
+                else:
+                    local_conn.execute("""
+                        INSERT INTO trades (id, account_id, signal_id, ticket, symbol, action, volume, sl, tp1, tp2, tp3, tp1_lots, tp2_lots, tp3_lots, tp1_hit, tp2_hit, tp3_hit, status, open_price, close_price, pnl, error_msg)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        t["id"], t["account_id"], t["signal_id"], t["ticket"], t["symbol"], t["action"], t["volume"],
+                        t["sl"], t["tp1"], t["tp2"], t["tp3"], t["tp1_lots"], t["tp2_lots"], t["tp3_lots"],
+                        t["tp1_hit"], t["tp2_hit"], t["tp3_hit"], t["status"], t["open_price"], t["close_price"],
+                        t["pnl"], t["error_msg"]
+                    ))
+
+        # 5. Pull signal_executions
+        if live_account_ids:
+            placeholders = ", ".join(["%s"] * len(live_account_ids))
+            live_execs = live_conn.execute(f"SELECT * FROM signal_executions WHERE account_id IN ({placeholders})", live_account_ids).fetchall()
+            for ex in live_execs:
+                local_conn.execute("""
+                    INSERT OR REPLACE INTO signal_executions (account_id, signal_id, status, error_msg, timestamp)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (ex["account_id"], ex["signal_id"], ex["status"], ex["error_msg"], ex["timestamp"]))
+
+        local_conn.commit()
+        # Restore changes pending flag since this was a pull (not new client-side edits)
+        _local_changes_pending = original_pending
+        return True
+    except Exception as e:
+        print(f"Error pulling data from live DB: {e}")
+        return False
+    finally:
+        local_conn.close()
+        live_conn.close()
 
 def create_user(username, password):
     # Registration runs on live AWS DB
@@ -1104,6 +1254,7 @@ def authenticate_user(username, password):
             
             user_data = dict(row)
             sync_user_to_local(user_data)
+            pull_data_from_live(user_data["id"])
             return user_data
         return None
     finally:
@@ -1158,6 +1309,18 @@ def verify_session(session_token):
                 "is_blocked": is_blocked
             })
             sync_session_to_local(session_token, user_id)
+            
+            # If local database has 0 accounts for this user, pull from live AWS to populate local DB.
+            # This prevents a fresh local DB from accidentally wiping live DB on the next sync cycle.
+            local_conn = get_local_db_connection()
+            try:
+                local_acc_count = local_conn.execute("SELECT COUNT(*) FROM accounts WHERE user_id = ?", (user_id,)).fetchone()[0]
+                if local_acc_count == 0:
+                    pull_data_from_live(user_id)
+            except Exception as pe:
+                print(f"Error checking accounts during session verification: {pe}")
+            finally:
+                local_conn.close()
             
             # Cache session for 15 seconds
             _session_cache[session_token] = (user_id, now + 15)

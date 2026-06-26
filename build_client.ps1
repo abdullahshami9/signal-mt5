@@ -34,10 +34,13 @@ pyinstaller --onefile --add-data "templates;templates" --hidden-import="numpy" -
 # 4. Create vendor_transfer folder
 Write-Host "[4/5] Preparing vendor_transfer packaging directory..." -ForegroundColor Yellow
 $transferDir = "vendor_transfer"
-if (Test-Path $transferDir) {
-    Remove-Item -Path $transferDir -Recurse -Force
+if (-not (Test-Path $transferDir)) {
+    New-Item -ItemType Directory -Path $transferDir | Out-Null
+} else {
+    if (Test-Path "$transferDir/Quanthropic-Client.exe") {
+        Remove-Item -Path "$transferDir/Quanthropic-Client.exe" -Force
+    }
 }
-New-Item -ItemType Directory -Path $transferDir | Out-Null
 
 # 5. Copy built files to vendor_transfer
 Write-Host "[5/5] Copying compiled client binary and writing distribution files..." -ForegroundColor Yellow
