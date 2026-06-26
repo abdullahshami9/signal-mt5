@@ -117,6 +117,8 @@ async def api_login(payload: LoginPayload):
     user = authenticate_user(username, password)
     if not user:
         raise HTTPException(status_code=400, detail="Invalid username or password")
+    if user.get("blocked"):
+        raise HTTPException(status_code=403, detail="Your account is blocked. Please contact the administrator.")
         
     session_token = create_session(user["id"])
     

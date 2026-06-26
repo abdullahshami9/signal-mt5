@@ -179,9 +179,16 @@ def init_db():
         id INT AUTO_INCREMENT PRIMARY KEY,
         username VARCHAR(255) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
+        is_blocked BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
+
+    # Ensure is_blocked column exists in case table was created already
+    try:
+        cursor.execute("ALTER TABLE access_users ADD COLUMN is_blocked BOOLEAN DEFAULT FALSE")
+    except OperationalError:
+        pass
 
     # User Sessions table for tracking login sessions
     cursor.execute("""
@@ -736,6 +743,8 @@ def authenticate_user(username, password):
     try:
         row = conn.execute("SELECT * FROM access_users WHERE username = ?", (username,)).fetchone()
         if row and verify_password(password, row["password_hash"]):
+            if row["is_blocked"] or row["is_blocked"] == 1:
+                return {"blocked": True}
             return dict(row)
         return None
     finally:
@@ -754,8 +763,17 @@ def create_session(user_id):
 def verify_session(session_token):
     conn = get_db_connection()
     try:
-        row = conn.execute("SELECT user_id FROM user_sessions WHERE session_id = ?", (session_token,)).fetchone()
-        return row["user_id"] if row else None
+        row = conn.execute("""
+            SELECT us.user_id, au.is_blocked 
+            FROM user_sessions us
+            JOIN access_users au ON us.user_id = au.id
+            WHERE us.session_id = ?
+        """, (session_token,)).fetchone()
+        if row:
+            if row["is_blocked"] or row["is_blocked"] == 1:
+                return None
+            return row["user_id"]
+        return None
     finally:
         conn.close()
 
