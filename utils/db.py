@@ -5,6 +5,7 @@ import hashlib
 import uuid
 from datetime import datetime
 from dotenv import load_dotenv
+import time
 
 # Load env variables from .env in executable/script directory
 is_frozen = getattr(sys, 'frozen', False)
@@ -807,7 +808,7 @@ def get_settings(user_id=None):
                 "telegram_status": "disconnected"
             }
             for k, v in default_settings.items():
-                cursor.execute("INSERT IGNORE INTO settings (user_id, `key`, `value`) VALUES (?, ?, ?)", (user_id, k, v))
+                cursor.execute("INSERT OR IGNORE INTO settings (user_id, `key`, `value`) VALUES (?, ?, ?)", (user_id, k, v))
             conn.commit()
 
         rows = conn.execute("SELECT `key`, `value` FROM settings WHERE user_id = ?", (user_id,)).fetchall()
