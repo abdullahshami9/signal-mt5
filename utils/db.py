@@ -10,7 +10,7 @@ load_dotenv()
 
 PROD_DB = os.getenv("PROD_DB", "False").lower() in ("true", "1", "t", "yes")
 
-class LibSQLRow:
+class MySQLRow:
     def __init__(self, cursor, values):
         self._keys = [col[0] for col in cursor.description] if cursor.description else []
         self._values = values
@@ -40,7 +40,7 @@ class LibSQLRow:
         return repr(self._values)
 
 
-class LibSQLCursorAdapter:
+class MySQLCursorAdapter:
     def __init__(self, cursor, row_factory=None):
         self._cursor = cursor
         self.row_factory = row_factory
@@ -58,15 +58,22 @@ class LibSQLCursorAdapter:
         return self._cursor.rowcount
 
     def execute(self, sql, parameters=()):
+        if isinstance(sql, str):
+            sql = sql.replace('?', '%s')
         self._cursor.execute(sql, parameters)
         return self
 
     def executemany(self, sql, seq_of_parameters):
+        if isinstance(sql, str):
+            sql = sql.replace('?', '%s')
         self._cursor.executemany(sql, seq_of_parameters)
         return self
 
     def executescript(self, sql_script):
-        self._cursor.executescript(sql_script)
+        for statement in sql_script.split(';'):
+            statement = statement.strip()
+            if statement:
+                self.execute(statement)
         return self
 
     def _wrap_row(self, row):
@@ -92,13 +99,13 @@ class LibSQLCursorAdapter:
         self._cursor.close()
 
 
-class LibSQLConnectionAdapter:
+class MySQLConnectionAdapter:
     def __init__(self, conn):
         self._conn = conn
         self.row_factory = None
 
     def cursor(self):
-        return LibSQLCursorAdapter(self._conn.cursor(), self.row_factory)
+        return MySQLCursorAdapter(self._conn.cursor(), self.row_factory)
 
     def execute(self, sql, parameters=()):
         cursor = self.cursor()
@@ -126,36 +133,41 @@ class LibSQLConnectionAdapter:
 
 
 if PROD_DB:
-    import libsql
-    DB_URL = os.getenv("TURSO_DATABASE_URL")
-    DB_TOKEN = os.getenv("TURSO_AUTH_TOKEN")
-    
-    # Aliases for exceptions & factory
-    OperationalError = ValueError
-    IntegrityError = ValueError
-    DatabaseError = ValueError
-    RowFactory = LibSQLRow
+    DB_HOST = os.getenv("DB_HOST_PROD")
+    DB_PORT = int(os.getenv("DB_PORT_PROD", 3306))
+    DB_USER = os.getenv("DB_USER_PROD")
+    DB_PASSWORD = os.getenv("DB_PASSWORD_PROD")
+    DB_NAME = os.getenv("DB_NAME_PROD")
 else:
-    import sqlite3
-    DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "trading_bot.db"))
-    
-    # Aliases for exceptions & factory
-    OperationalError = sqlite3.OperationalError
-    IntegrityError = sqlite3.IntegrityError
-    DatabaseError = sqlite3.DatabaseError
-    RowFactory = sqlite3.Row
+    DB_HOST = os.getenv("DB_HOST_LOCAL")
+    DB_PORT = int(os.getenv("DB_PORT_LOCAL", 3306))
+    DB_USER = os.getenv("DB_USER_LOCAL")
+    DB_PASSWORD = os.getenv("DB_PASSWORD_LOCAL")
+    DB_NAME = os.getenv("DB_NAME_LOCAL")
+
+import pymysql
+import pymysql.err
+
+OperationalError = pymysql.err.OperationalError
+IntegrityError = pymysql.err.IntegrityError
+DatabaseError = pymysql.err.DatabaseError
+RowFactory = MySQLRow
 
 def get_db_connection():
-    if PROD_DB:
-        raw_conn = libsql.connect(DB_URL, auth_token=DB_TOKEN)
-        conn = LibSQLConnectionAdapter(raw_conn)
-        conn.row_factory = RowFactory
-        return conn
-    else:
-        conn = sqlite3.connect(DB_PATH, timeout=30.0)
-        conn.row_factory = RowFactory
-        conn.execute("PRAGMA journal_mode=WAL;")
-        return conn
+    raw_conn = pymysql.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        autocommit=True
+    )
+    with raw_conn.cursor() as cursor:
+        cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{DB_NAME}`")
+    raw_conn.select_db(DB_NAME)
+    
+    conn = MySQLConnectionAdapter(raw_conn)
+    conn.row_factory = RowFactory
+    return conn
 
 def init_db():
     conn = get_db_connection()
@@ -164,9 +176,9 @@ def init_db():
     # Access Users table for parent login
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS access_users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        username VARCHAR(255) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
@@ -174,8 +186,8 @@ def init_db():
     # User Sessions table for tracking login sessions
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS user_sessions (
-        session_id TEXT PRIMARY KEY,
-        user_id INTEGER NOT NULL,
+        session_id VARCHAR(255) PRIMARY KEY,
+        user_id INT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
     )
@@ -191,21 +203,21 @@ def init_db():
     # Accounts table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS accounts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        login INTEGER UNIQUE NOT NULL,
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        login BIGINT UNIQUE NOT NULL,
         password TEXT NOT NULL,
-        server TEXT NOT NULL,
+        server VARCHAR(255) NOT NULL,
         terminal_path TEXT NOT NULL,
-        risk_pct REAL DEFAULT 1.0,
-        is_active INTEGER DEFAULT 1,
-        balance REAL DEFAULT 0.0,
-        equity REAL DEFAULT 0.0,
-        connection_status TEXT DEFAULT 'disconnected',
+        risk_pct DOUBLE DEFAULT 1.0,
+        is_active INT DEFAULT 1,
+        balance DOUBLE DEFAULT 0.0,
+        equity DOUBLE DEFAULT 0.0,
+        connection_status VARCHAR(50) DEFAULT 'disconnected',
         last_error TEXT,
-        name TEXT,
-        payment_date TEXT,
-        user_id INTEGER,
-        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        name VARCHAR(255),
+        payment_date VARCHAR(50),
+        user_id INT,
+        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
     )
     """)
@@ -213,34 +225,36 @@ def init_db():
     # Signals table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS signals (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        telegram_msg_id INTEGER,
-        channel_id INTEGER,
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        telegram_msg_id BIGINT,
+        channel_id BIGINT,
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         raw_text TEXT NOT NULL,
-        action TEXT NOT NULL, -- BUY, SELL, CLOSE, MODIFY
-        symbol TEXT NOT NULL,
-        sl REAL,
-        tp1 REAL,
-        tp2 REAL,
-        tp3 REAL,
-        entry_min REAL,
-        entry_max REAL,
-        status TEXT DEFAULT 'pending' -- pending, processed
+        action VARCHAR(50) NOT NULL,
+        symbol VARCHAR(50) NOT NULL,
+        sl DOUBLE,
+        tp1 DOUBLE,
+        tp2 DOUBLE,
+        tp3 DOUBLE,
+        entry_min DOUBLE,
+        entry_max DOUBLE,
+        status VARCHAR(50) DEFAULT 'pending',
+        user_id INT,
+        FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
     )
     """)
     
-    # Ensure entry_min, entry_max and user_id columns exist in case table was created already
+    # Ensure columns exist in signals table in case table was created already
     try:
-        cursor.execute("ALTER TABLE signals ADD COLUMN entry_min REAL")
+        cursor.execute("ALTER TABLE signals ADD COLUMN entry_min DOUBLE")
     except OperationalError:
         pass
     try:
-        cursor.execute("ALTER TABLE signals ADD COLUMN entry_max REAL")
+        cursor.execute("ALTER TABLE signals ADD COLUMN entry_max DOUBLE")
     except OperationalError:
         pass
     try:
-        cursor.execute("ALTER TABLE signals ADD COLUMN user_id INTEGER REFERENCES access_users(id) ON DELETE CASCADE")
+        cursor.execute("ALTER TABLE signals ADD COLUMN user_id INT REFERENCES access_users(id) ON DELETE CASCADE")
     except OperationalError:
         pass
         
@@ -248,44 +262,44 @@ def init_db():
         
     # Ensure columns exist in accounts table in case table was created already
     try:
-        cursor.execute("ALTER TABLE accounts ADD COLUMN name TEXT")
+        cursor.execute("ALTER TABLE accounts ADD COLUMN name VARCHAR(255)")
     except OperationalError:
         pass
     try:
-        cursor.execute("ALTER TABLE accounts ADD COLUMN payment_date TEXT")
+        cursor.execute("ALTER TABLE accounts ADD COLUMN payment_date VARCHAR(50)")
     except OperationalError:
         pass
     try:
-        cursor.execute("ALTER TABLE accounts ADD COLUMN user_id INTEGER REFERENCES access_users(id) ON DELETE CASCADE")
+        cursor.execute("ALTER TABLE accounts ADD COLUMN user_id INT REFERENCES access_users(id) ON DELETE CASCADE")
     except OperationalError:
         pass
     
     # Trades table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS trades (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        account_id INTEGER NOT NULL,
-        signal_id INTEGER NOT NULL,
-        ticket INTEGER, -- MT5 position ticket
-        symbol TEXT NOT NULL,
-        action TEXT NOT NULL, -- BUY, SELL
-        volume REAL NOT NULL, -- Initial lot size
-        sl REAL,
-        tp1 REAL,
-        tp2 REAL,
-        tp3 REAL,
-        tp1_lots REAL DEFAULT 0.0,
-        tp2_lots REAL DEFAULT 0.0,
-        tp3_lots REAL DEFAULT 0.0,
-        tp1_hit INTEGER DEFAULT 0,
-        tp2_hit INTEGER DEFAULT 0,
-        tp3_hit INTEGER DEFAULT 0,
-        status TEXT DEFAULT 'open', -- open, closed, failed
-        open_price REAL,
-        close_price REAL,
-        pnl REAL DEFAULT 0.0,
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        account_id INT NOT NULL,
+        signal_id INT NOT NULL,
+        ticket BIGINT,
+        symbol VARCHAR(50) NOT NULL,
+        action VARCHAR(50) NOT NULL,
+        volume DOUBLE NOT NULL,
+        sl DOUBLE,
+        tp1 DOUBLE,
+        tp2 DOUBLE,
+        tp3 DOUBLE,
+        tp1_lots DOUBLE DEFAULT 0.0,
+        tp2_lots DOUBLE DEFAULT 0.0,
+        tp3_lots DOUBLE DEFAULT 0.0,
+        tp1_hit INT DEFAULT 0,
+        tp2_hit INT DEFAULT 0,
+        tp3_hit INT DEFAULT 0,
+        status VARCHAR(50) DEFAULT 'open',
+        open_price DOUBLE,
+        close_price DOUBLE,
+        pnl DOUBLE DEFAULT 0.0,
         error_msg TEXT,
-        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
         FOREIGN KEY (signal_id) REFERENCES signals(id) ON DELETE CASCADE
     )
@@ -294,9 +308,9 @@ def init_db():
     # Signal executions table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS signal_executions (
-        account_id INTEGER NOT NULL,
-        signal_id INTEGER NOT NULL,
-        status TEXT NOT NULL, -- executed, failed, skipped
+        account_id INT NOT NULL,
+        signal_id INT NOT NULL,
+        status VARCHAR(50) NOT NULL,
         error_msg TEXT,
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (account_id, signal_id),
@@ -305,40 +319,16 @@ def init_db():
     )
     """)
     
-    # Settings table migration to support compound key (user_id, key)
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'")
-    if cursor.fetchone():
-        cursor.execute("PRAGMA table_info(settings)")
-        columns = [row[1] for row in cursor.fetchall()]
-        if "user_id" not in columns:
-            # Fetch old settings
-            cursor.execute("SELECT key, value FROM settings")
-            old_settings = cursor.fetchall()
-            # Drop table
-            cursor.execute("DROP TABLE settings")
-            # Create new settings table
-            cursor.execute("""
-            CREATE TABLE IF NOT EXISTS settings (
-                user_id INTEGER NOT NULL,
-                key TEXT NOT NULL,
-                value TEXT NOT NULL,
-                PRIMARY KEY (user_id, key),
-                FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
-            )
-            """)
-            # Migrate old settings (assign to user_id=1)
-            for key, value in old_settings:
-                cursor.execute("INSERT OR REPLACE INTO settings (user_id, key, value) VALUES (1, ?, ?)", (key, value))
-    else:
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS settings (
-            user_id INTEGER NOT NULL,
-            key TEXT NOT NULL,
-            value TEXT NOT NULL,
-            PRIMARY KEY (user_id, key),
-            FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
-        )
-        """)
+    # Settings table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS settings (
+        user_id INT NOT NULL,
+        `key` VARCHAR(255) NOT NULL,
+        `value` TEXT NOT NULL,
+        PRIMARY KEY (user_id, `key`),
+        FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
+    )
+    """)
         
     # Seed default settings for user_id = 1
     cursor.execute("SELECT COUNT(*) FROM settings WHERE user_id = 1")
@@ -351,22 +341,24 @@ def init_db():
             "telegram_status": "disconnected"
         }
         for k, v in default_settings.items():
-            cursor.execute("INSERT OR IGNORE INTO settings (user_id, key, value) VALUES (1, ?, ?)", (k, v))
+            cursor.execute("INSERT IGNORE INTO settings (user_id, `key`, `value`) VALUES (1, ?, ?)", (k, v))
     
     # Logs table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INT AUTO_INCREMENT PRIMARY KEY,
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        level TEXT NOT NULL, -- INFO, WARNING, ERROR, DEBUG
-        sender TEXT NOT NULL, -- listener, executor_<login>, dashboard, system
-        message TEXT NOT NULL
+        level VARCHAR(50) NOT NULL,
+        sender VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        user_id INT,
+        FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
     )
     """)
     
     # Ensure logs has user_id column
     try:
-        cursor.execute("ALTER TABLE logs ADD COLUMN user_id INTEGER REFERENCES access_users(id) ON DELETE CASCADE")
+        cursor.execute("ALTER TABLE logs ADD COLUMN user_id INT REFERENCES access_users(id) ON DELETE CASCADE")
     except OperationalError:
         pass
         
@@ -494,10 +486,10 @@ def get_settings(user_id=None):
                 "telegram_status": "disconnected"
             }
             for k, v in default_settings.items():
-                cursor.execute("INSERT OR IGNORE INTO settings (user_id, key, value) VALUES (?, ?, ?)", (user_id, k, v))
+                cursor.execute("INSERT IGNORE INTO settings (user_id, `key`, `value`) VALUES (?, ?, ?)", (user_id, k, v))
             conn.commit()
 
-        rows = conn.execute("SELECT key, value FROM settings WHERE user_id = ?", (user_id,)).fetchall()
+        rows = conn.execute("SELECT `key`, `value` FROM settings WHERE user_id = ?", (user_id,)).fetchall()
         return {r["key"]: r["value"] for r in rows}
     finally:
         conn.close()
@@ -508,7 +500,7 @@ def save_settings(settings_dict, user_id=None):
     conn = get_db_connection()
     try:
         for k, v in settings_dict.items():
-            conn.execute("INSERT OR REPLACE INTO settings (user_id, key, value) VALUES (?, ?, ?)", (user_id, k, str(v)))
+            conn.execute("REPLACE INTO settings (user_id, `key`, `value`) VALUES (?, ?, ?)", (user_id, k, str(v)))
         conn.commit()
         add_log("INFO", "system", "Updated system settings", user_id=user_id)
         return True
@@ -566,7 +558,7 @@ def mark_signal_executed(account_id, signal_id, status, error_msg=None):
     conn = get_db_connection()
     try:
         conn.execute("""
-        INSERT OR REPLACE INTO signal_executions (account_id, signal_id, status, error_msg, timestamp)
+        REPLACE INTO signal_executions (account_id, signal_id, status, error_msg, timestamp)
         VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
         """, (account_id, signal_id, status, error_msg))
         conn.commit()
