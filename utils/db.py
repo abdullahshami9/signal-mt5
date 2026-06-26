@@ -1,17 +1,161 @@
-import sqlite3
 import os
 import json
 import hashlib
 import uuid
 from datetime import datetime
+from dotenv import load_dotenv
 
-DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "trading_bot.db"))
+# Load env variables from .env
+load_dotenv()
+
+PROD_DB = os.getenv("PROD_DB", "False").lower() in ("true", "1", "t", "yes")
+
+class LibSQLRow:
+    def __init__(self, cursor, values):
+        self._keys = [col[0] for col in cursor.description] if cursor.description else []
+        self._values = values
+        self._dict = dict(zip(self._keys, values))
+        
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._values[key]
+        return self._dict[key]
+        
+    def keys(self):
+        return self._keys
+        
+    def values(self):
+        return self._values
+        
+    def items(self):
+        return self._dict.items()
+        
+    def __iter__(self):
+        return iter(self._values)
+        
+    def __len__(self):
+        return len(self._values)
+        
+    def __repr__(self):
+        return repr(self._values)
+
+
+class LibSQLCursorAdapter:
+    def __init__(self, cursor, row_factory=None):
+        self._cursor = cursor
+        self.row_factory = row_factory
+
+    @property
+    def description(self):
+        return self._cursor.description
+
+    @property
+    def lastrowid(self):
+        return self._cursor.lastrowid
+
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
+
+    def execute(self, sql, parameters=()):
+        self._cursor.execute(sql, parameters)
+        return self
+
+    def executemany(self, sql, seq_of_parameters):
+        self._cursor.executemany(sql, seq_of_parameters)
+        return self
+
+    def executescript(self, sql_script):
+        self._cursor.executescript(sql_script)
+        return self
+
+    def _wrap_row(self, row):
+        if row is None:
+            return None
+        if self.row_factory:
+            return self.row_factory(self, row)
+        return row
+
+    def fetchone(self):
+        row = self._cursor.fetchone()
+        return self._wrap_row(row)
+
+    def fetchall(self):
+        rows = self._cursor.fetchall()
+        return [self._wrap_row(r) for r in rows]
+
+    def fetchmany(self, size=None):
+        rows = self._cursor.fetchmany(size) if size is not None else self._cursor.fetchmany()
+        return [self._wrap_row(r) for r in rows]
+
+    def close(self):
+        self._cursor.close()
+
+
+class LibSQLConnectionAdapter:
+    def __init__(self, conn):
+        self._conn = conn
+        self.row_factory = None
+
+    def cursor(self):
+        return LibSQLCursorAdapter(self._conn.cursor(), self.row_factory)
+
+    def execute(self, sql, parameters=()):
+        cursor = self.cursor()
+        cursor.execute(sql, parameters)
+        return cursor
+
+    def executemany(self, sql, seq_of_parameters):
+        cursor = self.cursor()
+        cursor.executemany(sql, seq_of_parameters)
+        return cursor
+
+    def executescript(self, sql_script):
+        cursor = self.cursor()
+        cursor.executescript(sql_script)
+        return cursor
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+
+if PROD_DB:
+    import libsql
+    DB_URL = os.getenv("TURSO_DATABASE_URL")
+    DB_TOKEN = os.getenv("TURSO_AUTH_TOKEN")
+    
+    # Aliases for exceptions & factory
+    OperationalError = ValueError
+    IntegrityError = ValueError
+    DatabaseError = ValueError
+    RowFactory = LibSQLRow
+else:
+    import sqlite3
+    DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "trading_bot.db"))
+    
+    # Aliases for exceptions & factory
+    OperationalError = sqlite3.OperationalError
+    IntegrityError = sqlite3.IntegrityError
+    DatabaseError = sqlite3.DatabaseError
+    RowFactory = sqlite3.Row
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_PATH, timeout=30.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL;")
-    return conn
+    if PROD_DB:
+        raw_conn = libsql.connect(DB_URL, auth_token=DB_TOKEN)
+        conn = LibSQLConnectionAdapter(raw_conn)
+        conn.row_factory = RowFactory
+        return conn
+    else:
+        conn = sqlite3.connect(DB_PATH, timeout=30.0)
+        conn.row_factory = RowFactory
+        conn.execute("PRAGMA journal_mode=WAL;")
+        return conn
 
 def init_db():
     conn = get_db_connection()
@@ -89,15 +233,15 @@ def init_db():
     # Ensure entry_min, entry_max and user_id columns exist in case table was created already
     try:
         cursor.execute("ALTER TABLE signals ADD COLUMN entry_min REAL")
-    except sqlite3.OperationalError:
+    except OperationalError:
         pass
     try:
         cursor.execute("ALTER TABLE signals ADD COLUMN entry_max REAL")
-    except sqlite3.OperationalError:
+    except OperationalError:
         pass
     try:
         cursor.execute("ALTER TABLE signals ADD COLUMN user_id INTEGER REFERENCES access_users(id) ON DELETE CASCADE")
-    except sqlite3.OperationalError:
+    except OperationalError:
         pass
         
     cursor.execute("UPDATE signals SET user_id = 1 WHERE user_id IS NULL")
@@ -105,15 +249,15 @@ def init_db():
     # Ensure columns exist in accounts table in case table was created already
     try:
         cursor.execute("ALTER TABLE accounts ADD COLUMN name TEXT")
-    except sqlite3.OperationalError:
+    except OperationalError:
         pass
     try:
         cursor.execute("ALTER TABLE accounts ADD COLUMN payment_date TEXT")
-    except sqlite3.OperationalError:
+    except OperationalError:
         pass
     try:
         cursor.execute("ALTER TABLE accounts ADD COLUMN user_id INTEGER REFERENCES access_users(id) ON DELETE CASCADE")
-    except sqlite3.OperationalError:
+    except OperationalError:
         pass
     
     # Trades table
@@ -223,7 +367,7 @@ def init_db():
     # Ensure logs has user_id column
     try:
         cursor.execute("ALTER TABLE logs ADD COLUMN user_id INTEGER REFERENCES access_users(id) ON DELETE CASCADE")
-    except sqlite3.OperationalError:
+    except OperationalError:
         pass
         
     cursor.execute("UPDATE logs SET user_id = 1 WHERE user_id IS NULL")
@@ -265,7 +409,7 @@ def add_account(login, password, server, terminal_path, risk_pct=1.0, name=None,
         conn.commit()
         add_log("INFO", "system", f"Added MT5 account {login} on server {server} for user {user_id}", user_id=user_id)
         return True
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         return False
     finally:
         conn.close()
@@ -590,7 +734,7 @@ def create_user(username, password):
         cursor.execute("INSERT INTO access_users (username, password_hash) VALUES (?, ?)", (username, pwd_hash))
         conn.commit()
         return True
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         return False
     finally:
         conn.close()
