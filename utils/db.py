@@ -294,6 +294,10 @@ def get_local_db_connection():
     db_path = get_local_db_path()
     raw_conn = sqlite3.connect(db_path, timeout=30.0)
     raw_conn.execute("PRAGMA foreign_keys = ON")
+    raw_conn.execute("PRAGMA journal_mode = WAL")
+    raw_conn.execute("PRAGMA synchronous = NORMAL")
+    raw_conn.execute("PRAGMA temp_store = MEMORY")
+    raw_conn.execute("PRAGMA cache_size = -2000")
     conn = SQLiteConnectionAdapter(raw_conn)
     conn.row_factory = SQLiteRow
     return conn
