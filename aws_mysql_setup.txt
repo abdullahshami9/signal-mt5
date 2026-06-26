@@ -71,7 +71,7 @@ STEP 5: Setup on Local Code
 Your local code is already configured to connect to the AWS MySQL database.
 Ensure your local .env file contains:
 
-DB_HOST_PROD="175.107.194.43"
+DB_HOST_PROD="13.49.223.231"
 DB_PORT_PROD=3306
 DB_USER_PROD="trading_user"
 DB_PASSWORD_PROD="trading_pass123"
