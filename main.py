@@ -5,6 +5,19 @@ import subprocess
 import threading
 import signal
 import uvicorn
+
+# Argument routing for PyInstaller packaged subprocess execution
+if "--user-id" in sys.argv:
+    import asyncio
+    import telegram_listener
+    asyncio.run(telegram_listener.main())
+    sys.exit(0)
+
+if "--account-id" in sys.argv:
+    import mt5_executor
+    mt5_executor.main()
+    sys.exit(0)
+
 from utils.db import init_db, get_accounts, get_settings, add_log, get_all_users
 
 # Track active subprocesses
@@ -51,7 +64,8 @@ def run_web_server():
     Runs FastAPI dashboard backend on port 8000.
     """
     try:
-        uvicorn.run("dashboard:app", host="0.0.0.0", port=8000, log_level="warning")
+        from dashboard import app
+        uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")
     except Exception as e:
         print(f"Web server exception: {e}", file=sys.stderr)
 
@@ -70,6 +84,9 @@ def main():
     server_thread = threading.Thread(target=run_web_server, daemon=True)
     server_thread.start()
     print("FastAPI Dashboard initialized on http://localhost:8000")
+    
+    import webbrowser
+    threading.Timer(1.5, lambda: webbrowser.open("http://localhost:8000")).start()
     
     # 3. Subprocesses monitor loop
     while True:
@@ -98,9 +115,9 @@ def main():
                             exit_code = active_listeners[user_id].poll()
                             add_log("WARNING", "system", f"Telegram listener process exited unexpectedly with code {exit_code}. Restarting...", user_id=user_id)
                         add_log("INFO", "system", f"Launching Telegram listener subprocess for user {user_id}...", user_id=user_id)
-                        active_listeners[user_id] = subprocess.Popen([
-                            sys.executable, "telegram_listener.py", "--user-id", str(user_id)
-                        ])
+                        is_frozen = getattr(sys, 'frozen', False)
+                        cmd = [sys.executable, "--user-id", str(user_id)] if is_frozen else [sys.executable, "main.py", "--user-id", str(user_id)]
+                        active_listeners[user_id] = subprocess.Popen(cmd)
                 else:
                     if user_id in active_listeners:
                         add_log("INFO", "system", f"Stopping Telegram listener subprocess for user {user_id}...", user_id=user_id)
@@ -153,9 +170,9 @@ def main():
                             add_log("WARNING", "system", f"Executor process for account {login} exited unexpectedly with code {exit_code}. Restarting...", user_id=user_id)
                             
                         add_log("INFO", "system", f"Launching MT5 executor subprocess for account {login}...", user_id=user_id)
-                        active_executors[acc_id] = subprocess.Popen([
-                            sys.executable, "mt5_executor.py", "--account-id", str(acc_id)
-                        ])
+                        is_frozen = getattr(sys, 'frozen', False)
+                        cmd = [sys.executable, "--account-id", str(acc_id)] if is_frozen else [sys.executable, "main.py", "--account-id", str(acc_id)]
+                        active_executors[acc_id] = subprocess.Popen(cmd)
                 else:
                     # Account deactivated, stop executor
                     if acc_id in active_executors:

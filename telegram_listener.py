@@ -41,8 +41,10 @@ async def main():
         while True:
             await asyncio.sleep(60)
             
-    # Resolve the session file path (in the project folder)
-    session_path = os.path.abspath(os.path.join(os.path.dirname(__file__), f"telegram_user_{user_id}"))
+    # Resolve the session file path (in the directory of the executable/script, not the temp folder)
+    is_frozen = getattr(sys, 'frozen', False)
+    base_dir = os.path.dirname(sys.executable) if is_frozen else os.path.dirname(os.path.abspath(__file__))
+    session_path = os.path.abspath(os.path.join(base_dir, f"telegram_user_{user_id}"))
     
     client = TelegramClient(session_path, api_id, api_hash)
     

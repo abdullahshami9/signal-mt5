@@ -1,14 +1,25 @@
 import os
+import sys
 import json
 import hashlib
 import uuid
 from datetime import datetime
 from dotenv import load_dotenv
 
-# Load env variables from .env
-load_dotenv()
+# Load env variables from .env in executable/script directory
+is_frozen = getattr(sys, 'frozen', False)
+if is_frozen:
+    exe_dir = os.path.dirname(sys.executable)
+    dotenv_path = os.path.join(exe_dir, ".env")
+    if os.path.exists(dotenv_path):
+        load_dotenv(dotenv_path)
+    else:
+        load_dotenv()
+else:
+    load_dotenv()
 
-PROD_DB = os.getenv("PROD_DB", "False").lower() in ("true", "1", "t", "yes")
+default_prod = "True" if is_frozen else "False"
+PROD_DB = os.getenv("PROD_DB", default_prod).lower() in ("true", "1", "t", "yes")
 
 class MySQLRow:
     def __init__(self, cursor, values):
@@ -133,11 +144,11 @@ class MySQLConnectionAdapter:
 
 
 if PROD_DB:
-    DB_HOST = os.getenv("DB_HOST_PROD")
+    DB_HOST = os.getenv("DB_HOST_PROD", "13.49.223.231")
     DB_PORT = int(os.getenv("DB_PORT_PROD", 3306))
-    DB_USER = os.getenv("DB_USER_PROD")
-    DB_PASSWORD = os.getenv("DB_PASSWORD_PROD")
-    DB_NAME = os.getenv("DB_NAME_PROD")
+    DB_USER = os.getenv("DB_USER_PROD", "trading_user")
+    DB_PASSWORD = os.getenv("DB_PASSWORD_PROD", "trading_pass123")
+    DB_NAME = os.getenv("DB_NAME_PROD", "trading_bot")
 else:
     DB_HOST = os.getenv("DB_HOST_LOCAL")
     DB_PORT = int(os.getenv("DB_PORT_LOCAL", 3306))

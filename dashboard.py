@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import psutil
 import asyncio
@@ -18,6 +19,11 @@ from utils.db import (
 )
 
 app = FastAPI(title="Quanthropic.dev MT5 Copier Dashboard")
+
+def get_resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), relative_path))
 
 # Enable CORS for easy local testing
 app.add_middleware(
@@ -89,7 +95,7 @@ async def get_dashboard(request: Request, session_token: Optional[str] = Cookie(
     if not session_token or not verify_session(session_token):
         return RedirectResponse(url="/login", status_code=303)
         
-    html_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "templates", "index.html"))
+    html_path = get_resource_path(os.path.join("templates", "index.html"))
     if not os.path.exists(html_path):
         return HTMLResponse("<h1>Dashboard templates/index.html not found!</h1>", status_code=404)
     with open(html_path, "r", encoding="utf-8") as f:
@@ -103,7 +109,7 @@ async def get_login_page(request: Request, session_token: Optional[str] = Cookie
     if session_token and verify_session(session_token):
         return RedirectResponse(url="/", status_code=303)
         
-    html_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "templates", "login.html"))
+    html_path = get_resource_path(os.path.join("templates", "login.html"))
     if not os.path.exists(html_path):
         return HTMLResponse("<h1>Login templates/login.html not found!</h1>", status_code=404)
     with open(html_path, "r", encoding="utf-8") as f:
@@ -512,8 +518,10 @@ async def api_telegram_send_code(payload: TelegramCodeSend, current_user: int = 
     except ValueError:
         raise HTTPException(status_code=400, detail="API ID must be an integer.")
         
-    # Build session file path
-    session_path = os.path.abspath(os.path.join(os.path.dirname(__file__), f"telegram_user_{current_user}"))
+    # Build session file path (in the directory of the executable/script, not the temp folder)
+    is_frozen = getattr(sys, 'frozen', False)
+    base_dir = os.path.dirname(sys.executable) if is_frozen else os.path.dirname(os.path.abspath(__file__))
+    session_path = os.path.abspath(os.path.join(base_dir, f"telegram_user_{current_user}"))
     
     # Instantiate client
     client = TelegramClient(session_path, api_id, api_hash)

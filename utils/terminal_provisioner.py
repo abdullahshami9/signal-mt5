@@ -1,15 +1,21 @@
 import os
+import sys
 import shutil
 import hashlib
 import time
 import psutil
+
+def get_project_root():
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 def terminate_executor_and_terminal(login, account_id, terminal_path):
     # 1. Terminate executor subprocess
     for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
         try:
             cmdline = proc.info['cmdline']
-            if cmdline and any('mt5_executor.py' in part for part in cmdline) and any(str(account_id) in part for part in cmdline):
+            if cmdline and any('--account-id' in part for part in cmdline) and any(str(account_id) in part for part in cmdline):
                 print(f"Terminating executor process for account {login} (PID {proc.info['pid']})...")
                 proc.terminate()
                 try:
@@ -157,7 +163,7 @@ def provision_isolated_terminal(login, password, server, user_specified_path=Non
     terminal_exe = os.path.join(src_dir, "terminal64.exe")
 
     # Get project root folder (parent of utils/)
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    project_root = get_project_root()
     dest_dir = os.path.join(project_root, "mt5_instances", f"acc_{login}")
     os.makedirs(dest_dir, exist_ok=True)
 
@@ -242,7 +248,7 @@ def sync_and_provision_all_accounts():
 
             # Target path under mt5_instances
             target_path = os.path.abspath(os.path.join(
-                os.path.dirname(__file__), "..", "mt5_instances", f"acc_{login}", "terminal64.exe"
+                get_project_root(), "mt5_instances", f"acc_{login}", "terminal64.exe"
             ))
             
             # Re-provision if terminal64.exe is missing OR if Config/servers.dat is missing OR if EnableExperts is not in startup.ini OR if Enabled=1 is not in common.ini
