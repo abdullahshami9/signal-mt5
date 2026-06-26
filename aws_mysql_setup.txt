@@ -1,0 +1,82 @@
+====================================================================
+               AWS MYSQL REMOTE CONNECTION SETUP GUIDE
+====================================================================
+
+Follow these steps on your AWS Ubuntu VPS to install, configure, and allow 
+remote MySQL connections (so your local code can connect to AWS database).
+
+--------------------------------------------------------------------
+STEP 1: Install MySQL Server
+--------------------------------------------------------------------
+Run these commands in the AWS SSH terminal:
+
+sudo apt update
+sudo apt install mysql-server -y
+sudo systemctl start mysql
+sudo systemctl enable mysql
+
+
+--------------------------------------------------------------------
+STEP 2: Create Database & Remote Database User
+--------------------------------------------------------------------
+Login to MySQL:
+
+sudo mysql
+
+Inside the MySQL console (mysql>), run these queries to create the database 
+and a user that is allowed to connect from any remote host ('%'):
+
+CREATE DATABASE IF NOT EXISTS trading_bot;
+CREATE USER 'trading_user'@'%' IDENTIFIED BY 'trading_pass123';
+GRANT ALL PRIVILEGES ON trading_bot.* TO 'trading_user'@'%';
+FLUSH PRIVILEGES;
+EXIT;
+
+
+--------------------------------------------------------------------
+STEP 3: Enable External Connections in MySQL Configuration
+--------------------------------------------------------------------
+By default, MySQL only listens to localhost. Allow external connections:
+
+1. Open config file:
+   sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
+
+2. Find the bind-address line:
+   bind-address = 127.0.0.1
+   
+   Change it to:
+   bind-address = 0.0.0.0
+
+3. Save and exit (Press Ctrl+O, then Enter to save; Ctrl+X to exit).
+
+4. Restart MySQL service:
+   sudo systemctl restart mysql
+
+
+--------------------------------------------------------------------
+STEP 4: Configure AWS Firewall / Security Group
+--------------------------------------------------------------------
+In your AWS EC2 console, edit the "Inbound Rules" for your instance's 
+Security Group:
+- Add a new rule:
+  - Type: MYSQL/Aurora
+  - Port Range: 3306
+  - Source: Anywhere-IPv4 (0.0.0.0/0) or choose "My IP" for maximum security.
+- Save the rules.
+
+
+--------------------------------------------------------------------
+STEP 5: Setup on Local Code
+--------------------------------------------------------------------
+Your local code is already configured to connect to the AWS MySQL database.
+Ensure your local .env file contains:
+
+DB_HOST_PROD="175.107.194.43"
+DB_PORT_PROD=3306
+DB_USER_PROD="trading_user"
+DB_PASSWORD_PROD="trading_pass123"
+DB_NAME_PROD="trading_bot"
+PROD_DB=True
+
+When you run the local code (python main.py), it will connect to AWS and 
+automatically initialize all tables!
