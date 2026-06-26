@@ -17,7 +17,7 @@ from utils.db import (
     verify_session, authenticate_user, create_session, create_user, delete_session
 )
 
-app = FastAPI(title="Antigravity MT5 Copier Dashboard")
+app = FastAPI(title="Quanthropic.dev MT5 Copier Dashboard")
 
 # Enable CORS for easy local testing
 app.add_middleware(

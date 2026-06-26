@@ -296,7 +296,7 @@ def process_trade_signal(account, signal):
             "sl": float(sl) if sl else 0.0,
             "deviation": 20,
             "magic": 100000 + account_id,
-            "comment": f"Antigravity Copier P{signal['id']}",
+            "comment": f"Quanthropic.dev Copier P{signal['id']}",
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": filling_mode
         }
@@ -311,7 +311,7 @@ def process_trade_signal(account, signal):
             "sl": float(sl) if sl else 0.0,
             "deviation": 20,
             "magic": 100000 + account_id,
-            "comment": f"Antigravity Copier S{signal['id']}",
+            "comment": f"Quanthropic.dev Copier S{signal['id']}",
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": filling_mode
         }

@@ -59,12 +59,12 @@ def main():
     global active_listeners, active_executors, server_thread
     
     print("=========================================")
-    print("   ANTIGRAVITY MT5 COPIER ORCHESTRATOR   ")
+    print("   QUANTHROPIC.DEV MT5 COPIER ORCHESTRATOR   ")
     print("=========================================")
     
-    # 1. Initialize SQLite Database
+    # 1. Initialize MySQL Database
     init_db()
-    add_log("INFO", "system", "System orchestrator started. SQLite Database initialized.")
+    add_log("INFO", "system", "System orchestrator started. MySQL Database initialized.")
     
     # 2. Start Web Dashboard Server inside daemon thread
     server_thread = threading.Thread(target=run_web_server, daemon=True)
