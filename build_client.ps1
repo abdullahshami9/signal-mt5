@@ -29,7 +29,7 @@ if (Test-Path "Quanthropic-Client.spec") { Remove-Item -Path "Quanthropic-Client
 # 3. Compile application using PyInstaller
 Write-Host "[3/5] Compiling application with PyInstaller (this may take a minute)..." -ForegroundColor Yellow
 # --add-data "templates;templates" packages the templates folder inside the executable
-pyinstaller --onefile --add-data "templates;templates" --name "Quanthropic-Client" main.py
+pyinstaller --onefile --add-data "templates;templates" --hidden-import="numpy" --hidden-import="numpy._core" --hidden-import="numpy._core.multiarray" --hidden-import="numpy._core._multiarray_umath" --hidden-import="numpy._core._multiarray_tests" --hidden-import="numpy._core.umath" --hidden-import="numpy._core.numerictypes" --name "Quanthropic-Client" main.py
 
 # 4. Create vendor_transfer folder
 Write-Host "[4/5] Preparing vendor_transfer packaging directory..." -ForegroundColor Yellow
