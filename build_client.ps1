@@ -20,6 +20,34 @@ if ($null -eq $pyinstallerCheck -or $pyinstallerCheck -eq "") {
     Write-Host "PyInstaller is already installed." -ForegroundColor Green
 }
 
+# 1.5 Stop any running instances to release file locks
+Write-Host "[1.5/5] Checking for running application instances..." -ForegroundColor Yellow
+$clientProcs = Get-Process -Name "Quanthropic-Client" -ErrorAction SilentlyContinue
+if ($clientProcs) {
+    Write-Host "Found running Quanthropic-Client process(es). Stopping them..." -ForegroundColor Yellow
+    $clientProcs | Stop-Process -Force
+    Start-Sleep -Seconds 2
+}
+
+try {
+    $pythonProcs = Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" -ErrorAction SilentlyContinue
+    foreach ($proc in $pythonProcs) {
+        if ($proc.CommandLine -like "*main.py*" -or $proc.CommandLine -like "*telegram_listener.py*" -or $proc.CommandLine -like "*dashboard.py*" -or $proc.CommandLine -like "*mt5_executor.py*") {
+            Write-Host "Stopping running Python process ($($proc.ProcessId)) to release database lock..." -ForegroundColor Yellow
+            Stop-Process -Id $proc.ProcessId -Force
+            Start-Sleep -Seconds 1
+        }
+    }
+} catch {
+    # Fallback if Get-CimInstance fails
+    $pythonProcs = Get-Process -Name "python" -ErrorAction SilentlyContinue
+    if ($pythonProcs) {
+        Write-Host "Found running python process(es). Stopping them to avoid lock..." -ForegroundColor Yellow
+        $pythonProcs | Stop-Process -Force
+        Start-Sleep -Seconds 2
+    }
+}
+
 # 2. Clean previous build folders
 Write-Host "[2/5] Cleaning up old build folders..." -ForegroundColor Yellow
 if (Test-Path "build") { Remove-Item -Path "build" -Recurse -Force }
@@ -38,11 +66,24 @@ if (-not (Test-Path $transferDir)) {
     New-Item -ItemType Directory -Path $transferDir | Out-Null
 } else {
     # Specifically clean compiled client binary, old DBs, and MT5 instance folder to protect vendor data
-    if (Test-Path "$transferDir/Quanthropic-Client.exe") { Remove-Item -Path "$transferDir/Quanthropic-Client.exe" -Force }
-    if (Test-Path "$transferDir/local_storage.db") { Remove-Item -Path "$transferDir/local_storage.db" -Force }
-    if (Test-Path "$transferDir/local_storage.db-shm") { Remove-Item -Path "$transferDir/local_storage.db-shm" -Force }
-    if (Test-Path "$transferDir/local_storage.db-wal") { Remove-Item -Path "$transferDir/local_storage.db-wal" -Force }
-    if (Test-Path "$transferDir/mt5_instances") { Remove-Item -Path "$transferDir/mt5_instances" -Recurse -Force }
+    try {
+        if (Test-Path "$transferDir/Quanthropic-Client.exe") { Remove-Item -Path "$transferDir/Quanthropic-Client.exe" -Force }
+        if (Test-Path "$transferDir/local_storage.db") { Remove-Item -Path "$transferDir/local_storage.db" -Force }
+        if (Test-Path "$transferDir/local_storage.db-shm") { Remove-Item -Path "$transferDir/local_storage.db-shm" -Force }
+        if (Test-Path "$transferDir/local_storage.db-wal") { Remove-Item -Path "$transferDir/local_storage.db-wal" -Force }
+        if (Test-Path "$transferDir/mt5_instances") { Remove-Item -Path "$transferDir/mt5_instances" -Recurse -Force }
+    } catch {
+        Write-Host ""
+        Write-Host "==========================================================" -ForegroundColor Red
+        Write-Host " ERROR: Could not clean old files in '$transferDir'." -ForegroundColor Red
+        Write-Host " The process cannot access 'local_storage.db' because it" -ForegroundColor Red
+        Write-Host " is being used by a running copier instance." -ForegroundColor Red
+        Write-Host " Please close all running instances of the software" -ForegroundColor Red
+        Write-Host " (Quanthropic-Client.exe or the console batch windows)" -ForegroundColor Red
+        Write-Host " and then run the build command again." -ForegroundColor Red
+        Write-Host "==========================================================" -ForegroundColor Red
+        Exit
+    }
 }
 
 # 5. Copy built files to vendor_transfer
