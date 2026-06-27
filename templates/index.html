@@ -69,24 +69,41 @@
     <!-- Navbar -->
     <header class="glass sticky top-0 z-40 border-b border-gray-800 px-6 py-2.5 flex items-center justify-between">
         <div class="flex items-center space-x-2">
-            <button class="p-2 hover:bg-gray-800/60 active:bg-gray-700/60 rounded-full text-gray-400 hover:text-white transition-all focus:outline-none" title="Main Menu">
+            <button
+                class="p-2 hover:bg-gray-800/60 active:bg-gray-700/60 rounded-full text-gray-400 hover:text-white transition-all focus:outline-none"
+                title="Main Menu">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16">
+                    </path>
                 </svg>
             </button>
             <div
-                class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center font-bold text-base text-white shadow-lg glow-indigo">
-                T.ai
+                class="w-10 h-10 rounded-xl bg-gray-950 border border-gray-800 flex items-center justify-center shadow-lg relative overflow-hidden">
+                <svg class="w-7 h-7 animate-pulse" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <!-- Candlestick 1 (Blue) -->
+                    <line x1="8" y1="5" x2="8" y2="25" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" />
+                    <rect x="5.5" y="11" width="5" height="10" rx="1.5" fill="#3b82f6" />
+                    
+                    <!-- Candlestick 2 (Red) -->
+                    <line x1="16" y1="7" x2="16" y2="27" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" />
+                    <rect x="13.5" y="15" width="5" height="9" rx="1.5" fill="#ef4444" />
+
+                    <!-- Candlestick 3 (Blue) -->
+                    <line x1="24" y1="3" x2="24" y2="22" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" />
+                    <rect x="21.5" y="7" width="5" height="9" rx="1.5" fill="#3b82f6" />
+                </svg>
             </div>
-            <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-gray-100 to-gray-400 bg-clip-text text-transparent">
-                Trading.ai
+            <h1
+                class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-gray-100 to-gray-400 bg-clip-text text-transparent">
+                Quanthropic.dev
             </h1>
         </div>
 
         <div class="flex items-center space-x-4">
             <!-- Connection Indicators -->
             <div class="flex items-center text-xs font-semibold">
-                <div class="flex items-center space-x-1.5 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20 text-[11px] text-emerald-400 font-semibold" title="Server Status: Online">
+                <div class="flex items-center space-x-1.5 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20 text-[11px] text-emerald-400 font-semibold"
+                    title="Server Status: Online">
                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                     <span>Online</span>
                 </div>
@@ -95,22 +112,26 @@
             <button onclick="openManualSignalModal()"
                 class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-medium transition-all shadow-md hover:scale-[1.02] active:scale-[0.98] flex items-center space-x-1">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M13 10V3L4 14h7v7l9-11h-7z"></path>
                 </svg>
                 <span>Manual Signal</span>
             </button>
-            
+
             <button id="sync-btn" onclick="triggerSync()" title="Sync Data"
                 class="p-2 hover:bg-gray-800/80 active:bg-gray-700/80 text-gray-400 hover:text-white rounded-full transition-all flex items-center justify-center focus:outline-none">
-                <svg id="sync-icon" class="w-5 h-5 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89M9 11l3 3L22 4"></path>
+                <svg id="sync-icon" class="w-5 h-5 transition-transform duration-500" fill="currentColor"
+                    viewBox="0 0 24 24">
+                    <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"></path>
                 </svg>
             </button>
-            
+
             <button onclick="handleLogout()" title="Logout"
                 class="p-2 hover:bg-gray-800/80 active:bg-gray-700/80 text-gray-400 hover:text-rose-400 rounded-full transition-all flex items-center justify-center focus:outline-none">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9">
+                    </path>
                 </svg>
             </button>
         </div>
@@ -273,9 +294,11 @@
                 </div>
                 <div class="relative">
                     <label class="block text-xs font-bold text-gray-400 mb-1">MT5 Broker Server *</label>
-                    <input type="text" id="acc-server" required placeholder="e.g. Pepperstone-MT5-Demo" autocomplete="off"
+                    <input type="text" id="acc-server" required placeholder="e.g. Pepperstone-MT5-Demo"
+                        autocomplete="off"
                         class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
-                    <div id="server-suggestions" class="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-gray-950/95 backdrop-blur border border-gray-800 rounded-xl shadow-2xl hidden divide-y divide-gray-900">
+                    <div id="server-suggestions"
+                        class="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-gray-950/95 backdrop-blur border border-gray-800 rounded-xl shadow-2xl hidden divide-y divide-gray-900">
                         <!-- Suggestions will be injected here -->
                     </div>
                 </div>
@@ -410,7 +433,8 @@
                     <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
                     <span>Manual Trade Signal</span>
                 </h3>
-                <button onclick="closeManualSignalModal()" class="text-gray-500 hover:text-white text-xl leading-none">&times;</button>
+                <button onclick="closeManualSignalModal()"
+                    class="text-gray-500 hover:text-white text-xl leading-none">&times;</button>
             </div>
             <form id="manual-signal-form" onsubmit="submitManualSignal(event)" class="space-y-4 text-sm">
                 <!-- Action Type selection and Symbol -->
@@ -424,26 +448,34 @@
                         <label class="block text-xs font-bold text-gray-400 mb-1">Action *</label>
                         <div class="grid grid-cols-4 gap-1 bg-gray-950 p-1 rounded-xl border border-gray-800">
                             <div class="relative flex items-center justify-center">
-                                <input type="radio" name="sig-action" value="BUY" id="action-buy" checked class="sr-only peer" onchange="toggleActionFields()">
-                                <label for="action-buy" class="w-full py-1.5 text-center rounded-lg cursor-pointer text-xs font-bold text-gray-400 select-none transition-all hover:bg-gray-900 peer-checked:bg-emerald-600 peer-checked:text-white">
+                                <input type="radio" name="sig-action" value="BUY" id="action-buy" checked
+                                    class="sr-only peer" onchange="toggleActionFields()">
+                                <label for="action-buy"
+                                    class="w-full py-1.5 text-center rounded-lg cursor-pointer text-xs font-bold text-gray-400 select-none transition-all hover:bg-gray-900 peer-checked:bg-emerald-600 peer-checked:text-white">
                                     BUY
                                 </label>
                             </div>
                             <div class="relative flex items-center justify-center">
-                                <input type="radio" name="sig-action" value="SELL" id="action-sell" class="sr-only peer" onchange="toggleActionFields()">
-                                <label for="action-sell" class="w-full py-1.5 text-center rounded-lg cursor-pointer text-xs font-bold text-gray-400 select-none transition-all hover:bg-gray-900 peer-checked:bg-rose-600 peer-checked:text-white">
+                                <input type="radio" name="sig-action" value="SELL" id="action-sell" class="sr-only peer"
+                                    onchange="toggleActionFields()">
+                                <label for="action-sell"
+                                    class="w-full py-1.5 text-center rounded-lg cursor-pointer text-xs font-bold text-gray-400 select-none transition-all hover:bg-gray-900 peer-checked:bg-rose-600 peer-checked:text-white">
                                     SELL
                                 </label>
                             </div>
                             <div class="relative flex items-center justify-center">
-                                <input type="radio" name="sig-action" value="CLOSE" id="action-close" class="sr-only peer" onchange="toggleActionFields()">
-                                <label for="action-close" class="w-full py-1.5 text-center rounded-lg cursor-pointer text-xs font-bold text-gray-400 select-none transition-all hover:bg-gray-900 peer-checked:bg-amber-600 peer-checked:text-white">
+                                <input type="radio" name="sig-action" value="CLOSE" id="action-close"
+                                    class="sr-only peer" onchange="toggleActionFields()">
+                                <label for="action-close"
+                                    class="w-full py-1.5 text-center rounded-lg cursor-pointer text-xs font-bold text-gray-400 select-none transition-all hover:bg-gray-900 peer-checked:bg-amber-600 peer-checked:text-white">
                                     CLOSE
                                 </label>
                             </div>
                             <div class="relative flex items-center justify-center">
-                                <input type="radio" name="sig-action" value="MODIFY" id="action-modify" class="sr-only peer" onchange="toggleActionFields()">
-                                <label for="action-modify" class="w-full py-1.5 text-center rounded-lg cursor-pointer text-xs font-bold text-gray-400 select-none transition-all hover:bg-gray-900 peer-checked:bg-indigo-600 peer-checked:text-white">
+                                <input type="radio" name="sig-action" value="MODIFY" id="action-modify"
+                                    class="sr-only peer" onchange="toggleActionFields()">
+                                <label for="action-modify"
+                                    class="w-full py-1.5 text-center rounded-lg cursor-pointer text-xs font-bold text-gray-400 select-none transition-all hover:bg-gray-900 peer-checked:bg-indigo-600 peer-checked:text-white">
                                     MODIFY
                                 </label>
                             </div>
@@ -456,14 +488,18 @@
                     <div class="flex items-center justify-between">
                         <label class="block text-xs font-bold text-gray-400">Entry Price (Pending Order)</label>
                         <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" id="sig-pending-toggle" onchange="togglePriceFields()" class="sr-only peer">
-                            <div class="w-7 h-4 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600 peer-checked:after:bg-white peer-checked:after:border-transparent"></div>
+                            <input type="checkbox" id="sig-pending-toggle" onchange="togglePriceFields()"
+                                class="sr-only peer">
+                            <div
+                                class="w-7 h-4 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600 peer-checked:after:bg-white peer-checked:after:border-transparent">
+                            </div>
                             <span class="ml-1.5 text-[10px] font-semibold text-gray-400">Set Price Range</span>
                         </label>
                     </div>
                     <div class="grid grid-cols-2 gap-3" id="price-inputs" style="display: none;">
                         <div>
-                            <label class="block text-[10px] font-bold text-gray-500 mb-1">Min Price / Target Price *</label>
+                            <label class="block text-[10px] font-bold text-gray-500 mb-1">Min Price / Target Price
+                                *</label>
                             <input type="number" step="0.00001" id="sig-entry-min" placeholder="e.g. 4530"
                                 class="w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-600">
                         </div>
@@ -480,7 +516,8 @@
                     <h4 class="text-xs font-bold text-indigo-400 uppercase tracking-wider">Stop Loss & Take Profit</h4>
                     <div class="grid grid-cols-2 gap-3.5">
                         <!-- SL Card -->
-                        <div class="bg-gray-950/40 p-3 rounded-xl border border-gray-800/80 space-y-2 flex flex-col justify-between">
+                        <div
+                            class="bg-gray-950/40 p-3 rounded-xl border border-gray-800/80 space-y-2 flex flex-col justify-between">
                             <label class="flex items-center space-x-2 cursor-pointer select-none">
                                 <input type="checkbox" id="sig-sl-enable" checked onchange="toggleSlTpInputs()"
                                     class="w-4 h-4 rounded text-indigo-600 bg-gray-950 border-gray-800 focus:ring-indigo-500 focus:ring-offset-gray-900 focus:ring-2">
@@ -489,9 +526,10 @@
                             <input type="number" step="0.00001" id="sig-sl" placeholder="e.g. 4525" required
                                 class="w-full bg-gray-950 border border-gray-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-600">
                         </div>
-                        
+
                         <!-- TP1 Card -->
-                        <div class="bg-gray-950/40 p-3 rounded-xl border border-gray-800/80 space-y-2 flex flex-col justify-between">
+                        <div
+                            class="bg-gray-950/40 p-3 rounded-xl border border-gray-800/80 space-y-2 flex flex-col justify-between">
                             <label class="flex items-center space-x-2 cursor-pointer select-none">
                                 <input type="checkbox" id="sig-tp1-enable" checked onchange="toggleSlTpInputs()"
                                     class="w-4 h-4 rounded text-indigo-600 bg-gray-950 border-gray-800 focus:ring-indigo-500 focus:ring-offset-gray-900 focus:ring-2">
@@ -502,7 +540,8 @@
                         </div>
 
                         <!-- TP2 Card -->
-                        <div class="bg-gray-950/40 p-3 rounded-xl border border-gray-800/80 space-y-2 flex flex-col justify-between">
+                        <div
+                            class="bg-gray-950/40 p-3 rounded-xl border border-gray-800/80 space-y-2 flex flex-col justify-between">
                             <label class="flex items-center space-x-2 cursor-pointer select-none">
                                 <input type="checkbox" id="sig-tp2-enable" checked onchange="toggleSlTpInputs()"
                                     class="w-4 h-4 rounded text-indigo-600 bg-gray-950 border-gray-800 focus:ring-indigo-500 focus:ring-offset-gray-900 focus:ring-2">
@@ -513,7 +552,8 @@
                         </div>
 
                         <!-- TP3 Card -->
-                        <div class="bg-gray-950/40 p-3 rounded-xl border border-gray-800/80 space-y-2 flex flex-col justify-between">
+                        <div
+                            class="bg-gray-950/40 p-3 rounded-xl border border-gray-800/80 space-y-2 flex flex-col justify-between">
                             <label class="flex items-center space-x-2 cursor-pointer select-none">
                                 <input type="checkbox" id="sig-tp3-enable" checked onchange="toggleSlTpInputs()"
                                     class="w-4 h-4 rounded text-indigo-600 bg-gray-950 border-gray-800 focus:ring-indigo-500 focus:ring-offset-gray-900 focus:ring-2">
@@ -528,7 +568,8 @@
                 <div class="pt-3 flex justify-end space-x-3">
                     <button type="button" onclick="closeManualSignalModal()"
                         class="px-4 py-2 bg-gray-800 text-gray-300 rounded-xl hover:bg-gray-700">Cancel</button>
-                    <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-all shadow-md">
+                    <button type="submit"
+                        class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-all shadow-md">
                         Send Signal
                     </button>
                 </div>
@@ -587,7 +628,7 @@
             if (action === "CLOSE") {
                 priceSection.style.display = "none";
                 sltpSection.style.display = "none";
-                
+
                 // Remove required attribute from all
                 document.getElementById("sig-entry-min").required = false;
                 document.getElementById("sig-entry-max").required = false;
@@ -598,24 +639,24 @@
             } else if (action === "MODIFY") {
                 priceSection.style.display = "none";
                 sltpSection.style.display = "block";
-                
+
                 // In modify, SL is not strictly mandatory, user can modify just TP1
                 slEnable.disabled = false;
-                
+
                 // Remove required from entry prices
                 document.getElementById("sig-entry-min").required = false;
                 document.getElementById("sig-entry-max").required = false;
-                
+
                 toggleSlTpInputs();
             } else {
                 // BUY or SELL
                 priceSection.style.display = "block";
                 sltpSection.style.display = "block";
-                
+
                 // For BUY/SELL, SL is mandatory for 1% risk calculation
                 slEnable.checked = true;
                 slEnable.disabled = true; // force it to be checked
-                
+
                 togglePriceFields();
                 toggleSlTpInputs();
             }
@@ -687,10 +728,10 @@
             e.preventDefault();
             const action = document.querySelector('input[name="sig-action"]:checked').value;
             const symbol = document.getElementById("sig-symbol").value.trim().toUpperCase();
-            
+
             let entry_min = null;
             let entry_max = null;
-            
+
             if (action === "BUY" || action === "SELL") {
                 const pendingToggle = document.getElementById("sig-pending-toggle").checked;
                 if (pendingToggle) {
@@ -702,12 +743,12 @@
                     }
                 }
             }
-            
+
             const sl = document.getElementById("sig-sl-enable").checked ? parseFloat(document.getElementById("sig-sl").value) : null;
             const tp1 = document.getElementById("sig-tp1-enable").checked ? parseFloat(document.getElementById("sig-tp1").value) : null;
             const tp2 = document.getElementById("sig-tp2-enable").checked ? parseFloat(document.getElementById("sig-tp2").value) : null;
             const tp3 = document.getElementById("sig-tp3-enable").checked ? parseFloat(document.getElementById("sig-tp3").value) : null;
-            
+
             // Additional validation for MODIFY: must have at least one field checked and filled
             if (action === "MODIFY") {
                 if (!sl && !tp1 && !tp2 && !tp3) {
@@ -739,7 +780,7 @@
                 console.log("Manual signal submitted successfully!");
                 closeManualSignalModal();
                 document.getElementById("manual-signal-form").reset();
-                
+
                 // Reset defaults
                 document.getElementById("sig-sl-enable").checked = true;
                 document.getElementById("sig-tp1-enable").checked = true;
@@ -747,7 +788,7 @@
                 document.getElementById("sig-tp3-enable").checked = true;
                 document.getElementById("sig-pending-toggle").checked = false;
                 toggleActionFields();
-                
+
                 fetchData();
             } catch (err) {
                 alert(`Error: ${err.message}`);
@@ -757,14 +798,14 @@
         async function cancelTrade(tradeId, event) {
             if (event) event.stopPropagation();
             if (!confirm("Are you sure you want to cancel this pending order?")) return;
-            
+
             try {
                 const res = await fetch(`${API_URL}/api/trades/${tradeId}/cancel`, {
                     method: "POST"
                 });
                 const result = await res.json();
                 if (!res.ok) throw new Error(result.detail || "Failed to cancel trade");
-                
+
                 fetchData();
             } catch (err) {
                 alert(`Error: ${err.message}`);
@@ -774,14 +815,14 @@
         async function cancelAllTrades(event) {
             if (event) event.stopPropagation();
             if (!confirm("Are you sure you want to cancel all active pending orders?")) return;
-            
+
             try {
                 const res = await fetch(`${API_URL}/api/trades/cancel_all`, {
                     method: "POST"
                 });
                 const result = await res.json();
                 if (!res.ok) throw new Error(result.detail || "Failed to cancel all trades");
-                
+
                 fetchData();
             } catch (err) {
                 alert(`Error: ${err.message}`);
@@ -1065,7 +1106,7 @@
                 const tradesRes = await fetch(`${API_URL}/api/trades`);
                 if (tradesRes.ok) {
                     const trades = await tradesRes.json();
-                    
+
                     // Show/hide cancel all button based on pending orders
                     const hasPending = trades.some(t => t.status === "pending");
                     const cancelAllBtn = document.getElementById("cancel-all-btn");
@@ -1127,13 +1168,12 @@
                             </td>
                             <td class="py-3.5">
                                 <div class="flex flex-col items-start space-y-1.5">
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${
-                                        isClosed ? 'bg-gray-800 text-gray-400' : 
-                                        isFailed ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 
-                                        isPending ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${isClosed ? 'bg-gray-800 text-gray-400' :
+                                isFailed ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                                    isPending ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
                                         isCancelRequested ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20 animate-pulse' :
-                                        'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                    }">
+                                            'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            }">
                                         ${t.status === 'cancel_requested' ? 'cancelling...' : t.status}
                                     </span>
                                     ${isPending ? `
@@ -1239,7 +1279,7 @@
         function initServerAutocomplete() {
             const input = document.getElementById("acc-server");
             const container = document.getElementById("server-suggestions");
-            
+
             if (!input || !container) return;
 
             fetchBrokerServers();
@@ -1340,7 +1380,7 @@
 
         // Intercept all API fetches to redirect to /login if unauthenticated (401)
         const originalFetch = window.fetch;
-        window.fetch = async function(...args) {
+        window.fetch = async function (...args) {
             const response = await originalFetch(...args);
             if (response.status === 401) {
                 window.location.href = '/login';
@@ -1365,16 +1405,16 @@
             const btn = document.getElementById("sync-btn");
             const btnText = document.getElementById("sync-btn-text");
             const icon = document.getElementById("sync-icon");
-            
+
             if (!btn) return;
-            
+
             // Disable button during sync
             btn.disabled = true;
             btn.classList.add("opacity-50", "cursor-not-allowed");
             if (btnText) btnText.innerText = "Syncing...";
             btn.title = "Syncing...";
             icon.classList.add("animate-spin");
-            
+
             try {
                 const res = await fetch('/api/sync', { method: 'POST' });
                 const data = await res.json();
