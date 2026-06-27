@@ -31,15 +31,18 @@ Write-Host "[3/5] Compiling application with PyInstaller (this may take a minute
 # --add-data "templates;templates" packages the templates folder inside the executable
 pyinstaller --onefile --add-data "templates;templates" --hidden-import="numpy" --hidden-import="numpy._core" --hidden-import="numpy._core.multiarray" --hidden-import="numpy._core._multiarray_umath" --hidden-import="numpy._core._multiarray_tests" --hidden-import="numpy._core.umath" --hidden-import="numpy._core.numerictypes" --name "Quanthropic-Client" main.py
 
-# 4. Create vendor_transfer folder
+# 4. Create/Clean vendor_transfer folder
 Write-Host "[4/5] Preparing vendor_transfer packaging directory..." -ForegroundColor Yellow
 $transferDir = "vendor_transfer"
 if (-not (Test-Path $transferDir)) {
     New-Item -ItemType Directory -Path $transferDir | Out-Null
 } else {
-    if (Test-Path "$transferDir/Quanthropic-Client.exe") {
-        Remove-Item -Path "$transferDir/Quanthropic-Client.exe" -Force
-    }
+    # Specifically clean compiled client binary, old DBs, and MT5 instance folder to protect vendor data
+    if (Test-Path "$transferDir/Quanthropic-Client.exe") { Remove-Item -Path "$transferDir/Quanthropic-Client.exe" -Force }
+    if (Test-Path "$transferDir/local_storage.db") { Remove-Item -Path "$transferDir/local_storage.db" -Force }
+    if (Test-Path "$transferDir/local_storage.db-shm") { Remove-Item -Path "$transferDir/local_storage.db-shm" -Force }
+    if (Test-Path "$transferDir/local_storage.db-wal") { Remove-Item -Path "$transferDir/local_storage.db-wal" -Force }
+    if (Test-Path "$transferDir/mt5_instances") { Remove-Item -Path "$transferDir/mt5_instances" -Recurse -Force }
 }
 
 # 5. Copy built files to vendor_transfer
