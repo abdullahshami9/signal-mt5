@@ -67,54 +67,51 @@
 
 <body class="min-h-screen flex flex-col antialiased">
     <!-- Navbar -->
-    <header class="glass sticky top-0 z-40 border-b border-gray-800 px-6 py-4 flex items-center justify-between">
-        <div class="flex items-center space-x-3">
+    <header class="glass sticky top-0 z-40 border-b border-gray-800 px-6 py-2.5 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+            <button class="p-2 hover:bg-gray-800/60 active:bg-gray-700/60 rounded-full text-gray-400 hover:text-white transition-all focus:outline-none" title="Main Menu">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                </svg>
+            </button>
             <div
-                class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center font-bold text-lg text-white shadow-lg glow-indigo">
+                class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center font-bold text-base text-white shadow-lg glow-indigo">
                 T.ai
             </div>
-            <div>
-                <h1
-                    class="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-gray-100 to-gray-400 bg-clip-text text-transparent">
-                    Trading.ai</h1>
-                <p class="text-xs text-gray-500 font-medium">Telegram-to-MT5 Real-Time Copier</p>
-            </div>
+            <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-gray-100 to-gray-400 bg-clip-text text-transparent">
+                Trading.ai
+            </h1>
         </div>
 
-        <div class="flex items-center space-x-6">
+        <div class="flex items-center space-x-4">
             <!-- Connection Indicators -->
-            <div class="flex items-center space-x-4 text-xs font-semibold">
-                <div class="flex items-center space-x-2 bg-gray-950/40 px-3 py-1.5 rounded-full border border-gray-800">
-                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span class="text-gray-400">Server: <span class="text-emerald-500">Online</span></span>
-                </div>
-
-                <div class="flex items-center space-x-2 bg-gray-950/40 px-3 py-1.5 rounded-full border border-gray-800"
-                    id="telegram-indicator-container">
-                    <span class="w-2.5 h-2.5 rounded-full bg-red-500" id="telegram-dot"></span>
-                    <span class="text-gray-400">Telegram: <span id="telegram-status-text"
-                            class="text-red-500 font-bold">Disconnected</span></span>
+            <div class="flex items-center text-xs font-semibold">
+                <div class="flex items-center space-x-1.5 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20 text-[11px] text-emerald-400 font-semibold" title="Server Status: Online">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>Online</span>
                 </div>
             </div>
 
             <button onclick="openManualSignalModal()"
-                class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium transition-all shadow-md hover:scale-[1.02] active:scale-[0.98]">
-                Manual Signal
+                class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-medium transition-all shadow-md hover:scale-[1.02] active:scale-[0.98] flex items-center space-x-1">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+                <span>Manual Signal</span>
             </button>
-            <button onclick="openSettingsModal()"
-                class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition-all shadow-md hover:scale-[1.02] active:scale-[0.98]">
-                Setup Telegram
-            </button>
-            <button id="sync-btn" onclick="triggerSync()"
-                class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition-all shadow-md hover:scale-[1.02] active:scale-[0.98] flex items-center space-x-1.5">
-                <svg id="sync-icon" class="w-4 h-4 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            
+            <button id="sync-btn" onclick="triggerSync()" title="Sync Data"
+                class="p-2 hover:bg-gray-800/80 active:bg-gray-700/80 text-gray-400 hover:text-white rounded-full transition-all flex items-center justify-center focus:outline-none">
+                <svg id="sync-icon" class="w-5 h-5 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89M9 11l3 3L22 4"></path>
                 </svg>
-                <span id="sync-btn-text">Sync Data</span>
             </button>
-            <button onclick="handleLogout()"
-                class="px-4 py-2 bg-rose-600/20 hover:bg-rose-600/35 text-rose-400 border border-rose-500/30 rounded-xl text-sm font-medium transition-all shadow-md hover:scale-[1.02] active:scale-[0.98]">
-                Logout
+            
+            <button onclick="handleLogout()" title="Logout"
+                class="p-2 hover:bg-gray-800/80 active:bg-gray-700/80 text-gray-400 hover:text-rose-400 rounded-full transition-all flex items-center justify-center focus:outline-none">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+                </svg>
             </button>
         </div>
     </header>
@@ -1047,18 +1044,20 @@
                     const dot = document.getElementById("telegram-dot");
                     const text = document.getElementById("telegram-status-text");
 
-                    if (settings.telegram_status === "connected") {
-                        dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse";
-                        text.className = "text-emerald-500 font-bold";
-                        text.innerText = "Connected";
-                    } else if (settings.telegram_status === "auth_required") {
-                        dot.className = "w-2.5 h-2.5 rounded-full bg-yellow-500";
-                        text.className = "text-yellow-500 font-bold animate-pulse";
-                        text.innerText = "Auth Required";
-                    } else {
-                        dot.className = "w-2.5 h-2.5 rounded-full bg-red-500";
-                        text.className = "text-red-500 font-bold";
-                        text.innerText = "Disconnected";
+                    if (dot && text) {
+                        if (settings.telegram_status === "connected") {
+                            dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse";
+                            text.className = "text-emerald-500 font-bold";
+                            text.innerText = "Connected";
+                        } else if (settings.telegram_status === "auth_required") {
+                            dot.className = "w-2.5 h-2.5 rounded-full bg-yellow-500";
+                            text.className = "text-yellow-500 font-bold animate-pulse";
+                            text.innerText = "Auth Required";
+                        } else {
+                            dot.className = "w-2.5 h-2.5 rounded-full bg-red-500";
+                            text.className = "text-red-500 font-bold";
+                            text.innerText = "Disconnected";
+                        }
                     }
                 }
 
@@ -1372,26 +1371,30 @@
             // Disable button during sync
             btn.disabled = true;
             btn.classList.add("opacity-50", "cursor-not-allowed");
-            btnText.innerText = "Syncing...";
+            if (btnText) btnText.innerText = "Syncing...";
+            btn.title = "Syncing...";
             icon.classList.add("animate-spin");
             
             try {
                 const res = await fetch('/api/sync', { method: 'POST' });
                 const data = await res.json();
                 if (res.ok) {
-                    btnText.innerText = "Sync Success!";
-                    btn.classList.replace("bg-blue-600", "bg-emerald-600");
-                    btn.classList.replace("hover:bg-blue-700", "hover:bg-emerald-700");
+                    if (btnText) btnText.innerText = "Sync Success!";
+                    btn.title = "Sync Success!";
+                    btn.classList.add("text-emerald-400");
+                    btn.classList.remove("text-gray-400", "hover:text-white");
                 } else {
-                    btnText.innerText = "Sync Failed!";
-                    btn.classList.replace("bg-blue-600", "bg-rose-600");
-                    btn.classList.replace("hover:bg-blue-700", "hover:bg-rose-700");
+                    if (btnText) btnText.innerText = "Sync Failed!";
+                    btn.title = "Sync Failed!";
+                    btn.classList.add("text-rose-400");
+                    btn.classList.remove("text-gray-400", "hover:text-white");
                     console.error("Sync failed:", data.detail);
                 }
             } catch (err) {
-                btnText.innerText = "Sync Error!";
-                btn.classList.replace("bg-blue-600", "bg-rose-600");
-                btn.classList.replace("hover:bg-blue-700", "hover:bg-rose-700");
+                if (btnText) btnText.innerText = "Sync Error!";
+                btn.title = "Sync Error!";
+                btn.classList.add("text-rose-400");
+                btn.classList.remove("text-gray-400", "hover:text-white");
                 console.error("Network error during sync:", err);
             } finally {
                 icon.classList.remove("animate-spin");
@@ -1399,9 +1402,10 @@
                 setTimeout(() => {
                     btn.disabled = false;
                     btn.classList.remove("opacity-50", "cursor-not-allowed");
-                    btnText.innerText = "Sync Data";
+                    if (btnText) btnText.innerText = "Sync Data";
+                    btn.title = "Sync Data";
                     // Reset class to default
-                    btn.className = "px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition-all shadow-md hover:scale-[1.02] active:scale-[0.98] flex items-center space-x-1.5";
+                    btn.className = "p-2 hover:bg-gray-800/80 active:bg-gray-700/80 text-gray-400 hover:text-white rounded-full transition-all flex items-center justify-center focus:outline-none";
                 }, 3000);
             }
         }
