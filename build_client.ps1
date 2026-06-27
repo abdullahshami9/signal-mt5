@@ -65,12 +65,13 @@ $transferDir = "vendor_transfer"
 if (-not (Test-Path $transferDir)) {
     New-Item -ItemType Directory -Path $transferDir | Out-Null
 } else {
-    # Specifically clean compiled client binary, old DBs, and MT5 instance folder to protect vendor data
+    # Specifically clean compiled client binary, old DBs, configuration files, and MT5 instance folder to protect vendor data
     try {
         if (Test-Path "$transferDir/Quanthropic-Client.exe") { Remove-Item -Path "$transferDir/Quanthropic-Client.exe" -Force }
         if (Test-Path "$transferDir/local_storage.db") { Remove-Item -Path "$transferDir/local_storage.db" -Force }
         if (Test-Path "$transferDir/local_storage.db-shm") { Remove-Item -Path "$transferDir/local_storage.db-shm" -Force }
         if (Test-Path "$transferDir/local_storage.db-wal") { Remove-Item -Path "$transferDir/local_storage.db-wal" -Force }
+        if (Test-Path "$transferDir/.env.example") { Remove-Item -Path "$transferDir/.env.example" -Force }
         if (Test-Path "$transferDir/mt5_instances") { Remove-Item -Path "$transferDir/mt5_instances" -Recurse -Force }
     } catch {
         Write-Host ""
@@ -106,40 +107,6 @@ pause
 "@
 Set-Content -Path "$transferDir/Start-Software.bat" -Value $batContent
 Write-Host "Created Start-Software.bat launcher." -ForegroundColor Green
-
-# Create a template env file demonstrating overrides
-$envTemplate = @"
-# ====================================================================
-# QUANTHROPIC.DEV CLIENT ENVIRONMENT OVERRIDES
-# ====================================================================
-# The Quanthropic Client has secure default AWS database connection parameters
-# built directly into the executable.
-#
-# If you want to override the default database host, port, or credentials,
-# rename this file to ".env" and set the corresponding values below.
-# Otherwise, you can safely delete or ignore this file.
-# ====================================================================
-
-# Set to True to override and use production AWS credentials defined below, 
-# or set to False to override and use local MySQL credentials.
-# PROD_DB=True
-
-# Custom Production Database Configuration
-# DB_HOST_PROD="your-aws-db-host"
-# DB_PORT_PROD=3306
-# DB_USER_PROD="your-db-username"
-# DB_PASSWORD_PROD="your-db-password"
-# DB_NAME_PROD="your-db-name"
-
-# Custom Local Database Configuration (if PROD_DB=False)
-# DB_HOST_LOCAL="localhost"
-# DB_PORT_LOCAL=3306
-# DB_USER_LOCAL="root"
-# DB_PASSWORD_LOCAL="your-local-password"
-# DB_NAME_LOCAL="trading_bot"
-"@
-Set-Content -Path "$transferDir/.env.example" -Value $envTemplate
-Write-Host "Created .env.example configuration template." -ForegroundColor Green
 
 # Create README.txt instructions
 $readmeContent = @"
