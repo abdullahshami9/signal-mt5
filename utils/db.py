@@ -354,12 +354,7 @@ def init_live_db():
     )
     """)
 
-    # Seed default user if access_users is empty
-    cursor.execute("SELECT COUNT(*) FROM access_users")
-    if cursor.fetchone()[0] == 0:
-        default_username = "vendor1"
-        default_pwd_hash = hash_password("vendor123")
-        cursor.execute("INSERT INTO access_users (username, password_hash) VALUES (?, ?)", (default_username, default_pwd_hash))
+
 
     # Accounts table
     cursor.execute("""
@@ -660,24 +655,6 @@ def init_local_sqlite_db():
         FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
     )
     """)
-
-    cursor.execute("SELECT COUNT(*) FROM access_users")
-    if cursor.fetchone()[0] == 0:
-        default_username = "vendor1"
-        default_pwd_hash = hash_password("vendor123")
-        cursor.execute("INSERT OR IGNORE INTO access_users (username, password_hash) VALUES (?, ?)", (default_username, default_pwd_hash))
-
-    cursor.execute("SELECT COUNT(*) FROM settings WHERE user_id = 1")
-    if cursor.fetchone()[0] == 0:
-        default_settings = {
-            "api_id": "",
-            "api_hash": "",
-            "phone": "",
-            "monitored_channels": "[]",
-            "telegram_status": "disconnected"
-        }
-        for k, v in default_settings.items():
-            cursor.execute("INSERT OR IGNORE INTO settings (user_id, key, value) VALUES (1, ?, ?)", (k, v))
 
     raw_conn.commit()
     raw_conn.close()
