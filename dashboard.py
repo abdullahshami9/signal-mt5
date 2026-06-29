@@ -70,6 +70,9 @@ async def startup_event():
 # Schema: { phone: {"client": TelegramClient, "hash": str} }
 active_logins = {}
 
+# Flag to signal that the UI has successfully fetched data
+ui_fetched_accounts = False
+
 class AccountCreate(BaseModel):
     login: int
     password: str
@@ -247,6 +250,8 @@ async def get_stats(current_user: int = Depends(get_current_user)):
     """
     Returns global trade and system performance statistics.
     """
+    global ui_fetched_accounts
+    ui_fetched_accounts = True
     try:
         accounts = get_accounts(user_id=current_user)
         total_balance = sum(a["balance"] for a in accounts)
@@ -361,6 +366,8 @@ async def api_get_broker_servers(current_user: int = Depends(get_current_user)):
 
 @app.get("/api/accounts")
 async def api_get_accounts(current_user: int = Depends(get_current_user)):
+    global ui_fetched_accounts
+    ui_fetched_accounts = True
     return get_accounts(user_id=current_user)
 
 @app.post("/api/accounts")

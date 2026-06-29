@@ -39,7 +39,7 @@ def connect_mt5(account):
     # Check if terminal path exists
     if path and not os.path.exists(path):
         add_log("ERROR", f"executor_acc_{login}", f"Terminal path does not exist: {path}")
-        update_account_status(login, 0, 0, "disconnected", f"Path not found: {path}")
+        update_account_status(account["id"], 0, 0, "disconnected", f"Path not found: {path}")
         return False
 
     add_log("INFO", f"executor_acc_{login}", "Initializing MT5 connection...")
@@ -90,27 +90,27 @@ def connect_mt5(account):
     if not connected:
         err = mt5.last_error()
         add_log("ERROR", f"executor_acc_{login}", f"MT5 initialize failed after 15 attempts: {err}")
-        update_account_status(login, 0, 0, "disconnected", f"Init failed: {err}")
+        update_account_status(account["id"], 0, 0, "disconnected", f"Init failed: {err}")
         return False
         
     # Attempt Login as a backup to verify connection
     if not mt5.login(login=login, password=password, server=server):
         err = mt5.last_error()
         add_log("ERROR", f"executor_acc_{login}", f"MT5 login failed: {err}")
-        update_account_status(login, 0, 0, "disconnected", f"Login failed: {err}")
+        update_account_status(account["id"], 0, 0, "disconnected", f"Login failed: {err}")
         mt5.shutdown()
         return False
         
     # Update account info
     acc_info = mt5.account_info()
     if acc_info:
-        update_account_status(login, acc_info.balance, acc_info.equity, "connected")
+        update_account_status(account["id"], acc_info.balance, acc_info.equity, "connected")
         add_log("INFO", f"executor_acc_{login}", f"Logged in. Balance: {acc_info.balance}, Equity: {acc_info.equity}")
         return True
     else:
         err = mt5.last_error()
         add_log("ERROR", f"executor_acc_{login}", f"Failed to get account info: {err}")
-        update_account_status(login, 0, 0, "connected", f"Account info failed: {err}")
+        update_account_status(account["id"], 0, 0, "connected", f"Account info failed: {err}")
         return True
 
 SYMBOL_CROSS_MAPPINGS = {
@@ -798,10 +798,10 @@ def main():
             if now - last_balance_update >= 10.0:
                 acc_info = mt5.account_info()
                 if acc_info:
-                    update_account_status(login, acc_info.balance, acc_info.equity, "connected")
+                    update_account_status(account["id"], acc_info.balance, acc_info.equity, "connected")
                 else:
                     err = mt5.last_error()
-                    update_account_status(login, 0, 0, "disconnected", f"Lost connection: {err}")
+                    update_account_status(account["id"], 0, 0, "disconnected", f"Lost connection: {err}")
                     add_log("WARNING", f"executor_acc_{login}", f"Lost connection to MT5 terminal. Reconnecting...")
                     
                     # Try to reconnect

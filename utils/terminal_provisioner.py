@@ -149,9 +149,9 @@ def find_appdata_config_dir(terminal_exe_path):
             return appdata_dir
     return None
 
-def provision_isolated_terminal(login, password, server, user_specified_path=None):
+def provision_isolated_terminal(login, password, server, user_specified_path=None, account_id=None):
     """
-    Creates an isolated MT5 directory under mt5_instances/acc_<login>,
+    Creates an isolated MT5 directory under mt5_instances/acc_<account_id> or acc_<login>,
     copies terminal64.exe, copies config files and certificates from AppData,
     and sets up startup.ini for automated login.
     Returns the absolute path to terminal64.exe.
@@ -164,7 +164,8 @@ def provision_isolated_terminal(login, password, server, user_specified_path=Non
 
     # Get project root folder (parent of utils/)
     project_root = get_project_root()
-    dest_dir = os.path.join(project_root, "mt5_instances", f"acc_{login}")
+    folder_name = f"acc_{account_id}" if account_id is not None else f"acc_{login}"
+    dest_dir = os.path.join(project_root, "mt5_instances", folder_name)
     os.makedirs(dest_dir, exist_ok=True)
 
     # 1. Copy executable files
@@ -232,7 +233,7 @@ EnableExperts=1
 def sync_and_provision_all_accounts():
     """
     Iterates through all accounts in the database, checks if they are provisioned
-    in mt5_instances/acc_<login>, provisions them if missing, and updates their
+    in mt5_instances/acc_<account_id>, provisions them if missing, and updates their
     terminal_path in the DB to the isolated copy.
     """
     from utils.db import get_accounts, get_db_connection, add_log
@@ -245,10 +246,11 @@ def sync_and_provision_all_accounts():
             password = acc["password"]
             server = acc["server"]
             current_path = acc["terminal_path"]
+            acc_id = acc["id"]
 
             # Target path under mt5_instances
             target_path = os.path.abspath(os.path.join(
-                get_project_root(), "mt5_instances", f"acc_{login}", "terminal64.exe"
+                get_project_root(), "mt5_instances", f"acc_{acc_id}", "terminal64.exe"
             ))
             
             # Re-provision if terminal64.exe is missing OR if Config/servers.dat is missing OR if EnableExperts is not in startup.ini OR if Enabled=1 is not in common.ini
@@ -291,9 +293,9 @@ def sync_and_provision_all_accounts():
                 try:
                     add_log("INFO", "system", f"Provisioning isolated MT5 terminal for account {login}...", user_id=acc["user_id"])
                     # Terminate executor and terminal first to release file locks
-                    terminate_executor_and_terminal(login, acc["id"], target_path)
+                    terminate_executor_and_terminal(login, acc_id, target_path)
                     time.sleep(1.0)
-                    new_path = provision_isolated_terminal(login, password, server, current_path)
+                    new_path = provision_isolated_terminal(login, password, server, current_path, account_id=acc_id)
 
                     # Update terminal_path in DB
                     conn.execute("""

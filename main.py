@@ -91,6 +91,14 @@ def main():
     # 3. Subprocesses monitor loop
     while True:
         try:
+            import dashboard
+            if not getattr(dashboard, "ui_fetched_accounts", False):
+                if not getattr(main, "_waiting_logged", False):
+                    print("Waiting for user to log in and load accounts on the web UI...")
+                    main._waiting_logged = True
+                time.sleep(1.0)
+                continue
+
             # --- Manage Telegram Listener Subprocesses ---
             active_user_ids = []
             try:

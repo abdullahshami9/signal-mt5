@@ -360,7 +360,7 @@ def init_live_db():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS accounts (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        login BIGINT UNIQUE NOT NULL,
+        login BIGINT NOT NULL,
         password TEXT NOT NULL,
         server VARCHAR(255) NOT NULL,
         terminal_path TEXT NOT NULL,
@@ -374,9 +374,26 @@ def init_live_db():
         payment_date VARCHAR(50),
         user_id INT,
         last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
+        FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE,
+        UNIQUE KEY login_user_id (login, user_id)
     )
     """)
+
+    # Migrate live DB schema if old unique index 'login' exists
+    try:
+        cursor.execute("SHOW INDEX FROM accounts WHERE Key_name = 'login_user_id'")
+        has_new_index = cursor.fetchone()
+        cursor.execute("SHOW INDEX FROM accounts WHERE Key_name = 'login'")
+        has_old_index = cursor.fetchone()
+        
+        if has_old_index and not has_new_index:
+            print("Migrating MySQL accounts table unique constraint...")
+            cursor.execute("ALTER TABLE accounts DROP INDEX login")
+            cursor.execute("ALTER TABLE accounts ADD UNIQUE KEY login_user_id (login, user_id)")
+            conn.commit()
+            print("MySQL accounts table migration completed successfully.")
+    except Exception as e:
+        print(f"Warning: Could not alter MySQL accounts table index: {e}")
     
     # Signals table
     cursor.execute("""
@@ -548,10 +565,59 @@ def init_local_sqlite_db():
     )
     """)
 
+    # Check if accounts table exists and contains the old 'login INTEGER UNIQUE' constraint
+    cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='accounts'")
+    accounts_table = cursor.fetchone()
+    if accounts_table and "login INTEGER UNIQUE" in accounts_table[0]:
+        print("Migrating SQLite accounts table unique constraint...")
+        try:
+            # Disable foreign keys temporarily for renaming
+            raw_conn.execute("PRAGMA foreign_keys = OFF")
+            raw_conn.execute("ALTER TABLE accounts RENAME TO accounts_old")
+            
+            # Create new table with UNIQUE (login, user_id)
+            raw_conn.execute("""
+            CREATE TABLE accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                login INTEGER NOT NULL,
+                password TEXT NOT NULL,
+                server TEXT NOT NULL,
+                terminal_path TEXT NOT NULL,
+                risk_pct REAL DEFAULT 1.0,
+                is_active INTEGER DEFAULT 1,
+                balance REAL DEFAULT 0.0,
+                equity REAL DEFAULT 0.0,
+                connection_status TEXT DEFAULT 'disconnected',
+                last_error TEXT,
+                name TEXT,
+                payment_date TEXT,
+                user_id INTEGER,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE,
+                UNIQUE (login, user_id)
+            )
+            """)
+            
+            # Copy data
+            raw_conn.execute("""
+            INSERT INTO accounts (id, login, password, server, terminal_path, risk_pct, is_active, balance, equity, connection_status, last_error, name, payment_date, user_id, last_updated)
+            SELECT id, login, password, server, terminal_path, risk_pct, is_active, balance, equity, connection_status, last_error, name, payment_date, user_id, last_updated
+            FROM accounts_old
+            """)
+            
+            raw_conn.execute("DROP TABLE accounts_old")
+            raw_conn.commit()
+            print("SQLite accounts table migration completed successfully.")
+        except Exception as e:
+            raw_conn.rollback()
+            print(f"Error migrating SQLite accounts table: {e}")
+        finally:
+            raw_conn.execute("PRAGMA foreign_keys = ON")
+
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS accounts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        login INTEGER UNIQUE NOT NULL,
+        login INTEGER NOT NULL,
         password TEXT NOT NULL,
         server TEXT NOT NULL,
         terminal_path TEXT NOT NULL,
@@ -565,7 +631,8 @@ def init_local_sqlite_db():
         payment_date TEXT,
         user_id INTEGER,
         last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE
+        FOREIGN KEY (user_id) REFERENCES access_users(id) ON DELETE CASCADE,
+        UNIQUE (login, user_id)
     )
     """)
 
@@ -709,10 +776,27 @@ def get_accounts(user_id=None):
     conn = get_db_connection()
     try:
         if user_id is not None:
-            rows = conn.execute("SELECT * FROM accounts WHERE user_id = ? ORDER BY login ASC", (user_id,)).fetchall()
+            rows = conn.execute("""
+                SELECT a.*, GROUP_CONCAT(au.username) AS other_vendors
+                FROM accounts a
+                LEFT JOIN accounts a2 ON a.login = a2.login AND a.user_id != a2.user_id
+                LEFT JOIN access_users au ON a2.user_id = au.id
+                WHERE a.user_id = ?
+                GROUP BY a.id
+                ORDER BY a.login ASC
+            """, (user_id,)).fetchall()
         else:
             rows = conn.execute("SELECT * FROM accounts ORDER BY login ASC").fetchall()
-        return [dict(r) for r in rows]
+            
+        result = []
+        for r in rows:
+            d = dict(r)
+            if "other_vendors" in d and d["other_vendors"]:
+                d["other_vendors"] = [u.strip() for u in d["other_vendors"].split(",") if u.strip()]
+            else:
+                d["other_vendors"] = []
+            result.append(d)
+        return result
     finally:
         conn.close()
 
@@ -724,23 +808,26 @@ def get_account(account_id):
     finally:
         conn.close()
 
-def update_account_status(login, balance, equity, status, error=None):
+def update_account_status(account_id, balance, equity, status, error=None):
     conn = get_db_connection()
     user_id = None
+    login = None
     try:
-        # Fetch user_id for logging
-        account = conn.execute("SELECT user_id FROM accounts WHERE login = ?", (int(login),)).fetchone()
+        # Fetch user_id and login for logging
+        account = conn.execute("SELECT user_id, login FROM accounts WHERE id = ?", (int(account_id),)).fetchone()
         if account:
             user_id = account["user_id"]
+            login = account["login"]
 
         conn.execute("""
         UPDATE accounts
         SET balance = ?, equity = ?, connection_status = ?, last_error = ?, last_updated = CURRENT_TIMESTAMP
-        WHERE login = ?
-        """, (float(balance), float(equity), status, error, int(login)))
+        WHERE id = ?
+        """, (float(balance), float(equity), status, error, int(account_id)))
         conn.commit()
     except Exception as e:
-        add_log("ERROR", "system", f"Failed to update status for account {login}: {e}", user_id=user_id)
+        login_str = f"ID {account_id}" if not login else f"{login}"
+        add_log("ERROR", "system", f"Failed to update status for account {login_str}: {e}", user_id=user_id)
     finally:
         conn.close()
 
@@ -1102,18 +1189,18 @@ def pull_data_from_live(user_id):
         live_account_ids = []
         for acc in live_accounts:
             live_account_ids.append(acc["id"])
-            existing = local_conn.execute("SELECT id FROM accounts WHERE login = ?", (acc["login"],)).fetchone()
+            existing = local_conn.execute("SELECT id FROM accounts WHERE login = ? AND user_id = ?", (acc["login"], user_id)).fetchone()
             if existing:
                 local_conn.execute("""
                     UPDATE accounts SET
                         password = ?, server = ?, terminal_path = ?, risk_pct = ?, is_active = ?,
                         balance = ?, equity = ?, connection_status = ?, last_error = ?, name = ?,
-                        payment_date = ?, user_id = ?
-                    WHERE login = ?
+                        payment_date = ?
+                    WHERE login = ? AND user_id = ?
                 """, (
                     acc["password"], acc["server"], acc["terminal_path"], acc["risk_pct"], acc["is_active"],
                     acc["balance"], acc["equity"], acc["connection_status"], acc["last_error"], acc["name"],
-                    acc["payment_date"], user_id, acc["login"]
+                    acc["payment_date"], acc["login"], user_id
                 ))
             else:
                 local_conn.execute("""
