@@ -405,9 +405,34 @@ def sync_and_provision_all_accounts():
                 except Exception:
                     pass
 
+            # Check if target servers.dat exists and contains the server name
+            has_matching_server = False
+            if os.path.exists(servers_dat_path):
+                try:
+                    with open(servers_dat_path, "rb") as f:
+                        servers_content = f.read()
+                    # Standardize server name search queries
+                    queries = []
+                    clean_server = server.strip().upper()
+                    search_terms = [clean_server]
+                    broker_name = clean_server.split('-')[0].split(' ')[0]
+                    if len(broker_name) >= 3 and broker_name not in search_terms:
+                        search_terms.append(broker_name)
+                    for term in search_terms:
+                        for encoding in ["utf-8", "utf-16le", "ascii"]:
+                            try:
+                                queries.append(term.encode(encoding))
+                            except Exception:
+                                pass
+                    if any(q in servers_content for q in queries):
+                        has_matching_server = True
+                except Exception:
+                    pass
+
             should_provision = (
                 not os.path.exists(target_path) or 
                 not os.path.exists(servers_dat_path) or 
+                not has_matching_server or  # Force re-provisioning if servers.dat lacks the server definition!
                 not has_enable_experts or 
                 not has_experts_enabled or
                 not has_use_cloud_disabled or
