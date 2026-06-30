@@ -46,12 +46,20 @@ def enable_experts_in_common_ini(config_dir):
     # Check if file exists
     if not os.path.exists(common_ini_path):
         # Create a basic common.ini if missing
-        content = "[Experts]\r\nEnabled=1\r\n"
+        content = "[Experts]\r\nEnabled=1\r\n\r\n[Tester]\r\nUseCloud=0\r\n"
         try:
             with open(common_ini_path, "w", encoding="utf-16") as f:
                 f.write(content)
         except Exception as e:
             print(f"Warning: Failed to create common.ini: {e}")
+        
+        # Also write a basic tester.ini
+        tester_ini_path = os.path.join(config_dir, "tester.ini")
+        try:
+            with open(tester_ini_path, "w", encoding="utf-16") as f:
+                f.write("[Tester]\r\nUseCloud=0\r\n")
+        except Exception:
+            pass
         return
 
     # Read existing content
@@ -66,10 +74,12 @@ def enable_experts_in_common_ini(config_dir):
         except Exception:
             return
 
-    # Parse and update/add [Experts] section
+    # Parse and update/add [Experts] and [Tester] sections
     out_lines = []
     in_experts = False
     has_enabled = False
+    in_tester = False
+    has_usecloud = False
     
     for line in lines:
         stripped = line.strip()
@@ -77,25 +87,42 @@ def enable_experts_in_common_ini(config_dir):
             if in_experts and not has_enabled:
                 out_lines.append("Enabled=1\r\n")
                 has_enabled = True
+            if in_tester and not has_usecloud:
+                out_lines.append("UseCloud=0\r\n")
+                has_usecloud = True
+                
             if stripped == "[Experts]":
                 in_experts = True
+                in_tester = False
+            elif stripped == "[Tester]":
+                in_tester = True
+                in_experts = False
             else:
                 in_experts = False
+                in_tester = False
         
         if in_experts and stripped.startswith("Enabled="):
             out_lines.append("Enabled=1\r\n")
             has_enabled = True
+        elif in_tester and stripped.startswith("UseCloud="):
+            out_lines.append("UseCloud=0\r\n")
+            has_usecloud = True
         else:
             out_lines.append(line)
             
-    # If experts section was never closed and has not been added
+    # If sections were never closed and have not been added
     if in_experts and not has_enabled:
         out_lines.append("Enabled=1\r\n")
         has_enabled = True
+    if in_tester and not has_usecloud:
+        out_lines.append("UseCloud=0\r\n")
+        has_usecloud = True
         
-    # If [Experts] section wasn't found at all
+    # Add sections if missing entirely
     if "[Experts]" not in [l.strip() for l in lines]:
         out_lines.append("\r\n[Experts]\r\nEnabled=1\r\n")
+    if "[Tester]" not in [l.strip() for l in lines]:
+        out_lines.append("\r\n[Tester]\r\nUseCloud=0\r\n")
         
     # Write back in UTF-16
     try:
@@ -103,6 +130,15 @@ def enable_experts_in_common_ini(config_dir):
             f.writelines(out_lines)
     except Exception as e:
         print(f"Warning: Failed to write common.ini: {e}")
+
+    # Also make sure tester.ini has UseCloud=0
+    tester_ini_path = os.path.join(config_dir, "tester.ini")
+    try:
+        with open(tester_ini_path, "w", encoding="utf-16") as f:
+            f.write("[Tester]\r\nUseCloud=0\r\n")
+    except Exception as e:
+        print(f"Warning: Failed to write tester.ini: {e}")
+
 
 def find_mt5_source_dir(user_specified_path=None):
     """
@@ -281,11 +317,26 @@ def sync_and_provision_all_accounts():
                 except Exception:
                     pass
 
+            has_use_cloud_disabled = False
+            if os.path.exists(common_ini_path):
+                try:
+                    with open(common_ini_path, "r", encoding="utf-16") as cf:
+                        content = cf.read()
+                        if "[Tester]" in content:
+                            tester_part = content.split("[Tester]")[1]
+                            if "[" in tester_part:
+                                tester_part = tester_part.split("[")[0]
+                            if "UseCloud=0" in tester_part.replace(" ", ""):
+                                has_use_cloud_disabled = True
+                except Exception:
+                    pass
+
             should_provision = (
                 not os.path.exists(target_path) or 
                 not os.path.exists(servers_dat_path) or 
                 not has_enable_experts or 
                 not has_experts_enabled or
+                not has_use_cloud_disabled or
                 os.path.abspath(current_path) != target_path
             )
 
