@@ -76,7 +76,7 @@ def connect_mt5(account):
         try:
             subprocess.Popen([path, "/portable", "/config:Config\\startup.ini"], cwd=cwd)
             # Give it some initial time to boot up
-            time.sleep(5)
+            time.sleep(8)
         except Exception as e:
             add_log("ERROR", f"executor_acc_{login}", f"Failed to launch terminal process: {e}")
             
@@ -100,18 +100,32 @@ def connect_mt5(account):
         err = mt5.last_error()
         add_log("WARNING", f"executor_acc_{login}", f"Connection attempt {attempt} failed: {err}. Retrying in 5s...")
         
-        # Self-healing: if connection fails repeatedly, kill and restart
-        if attempt == 3 and is_running:
+        # Check if the terminal process is currently running (dynamic check)
+        running_proc = False
+        try:
+            for proc in psutil.process_iter(['pid', 'name', 'exe']):
+                try:
+                    if proc.info['exe'] and os.path.abspath(proc.info['exe']) == os.path.abspath(path):
+                        running_proc = True
+                        break
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+        except Exception:
+            pass
+
+        # Self-healing: if connection fails repeatedly, kill the hung process
+        if attempt == 3 and running_proc:
             add_log("WARNING", f"executor_acc_{login}", "Terminal process is unresponsive. Terminating and relaunching clean instance...")
             kill_terminal_process(path)
-            is_running = False
+            running_proc = False
             time.sleep(2)
             
-        if not is_running:
+        if not running_proc:
             try:
+                add_log("INFO", f"executor_acc_{login}", "Terminal process is not running. Launching clean instance...")
                 subprocess.Popen([path, "/portable", "/config:Config\\startup.ini"], cwd=cwd)
             except Exception as e:
-                add_log("ERROR", f"executor_acc_{login}", f"Failed to relaunch terminal process: {e}")
+                add_log("ERROR", f"executor_acc_{login}", f"Failed to launch terminal process: {e}")
                 
         time.sleep(5)
         

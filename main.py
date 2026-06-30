@@ -181,6 +181,9 @@ def main():
                         is_frozen = getattr(sys, 'frozen', False)
                         cmd = [sys.executable, "--account-id", str(acc_id)] if is_frozen else [sys.executable, "main.py", "--account-id", str(acc_id)]
                         active_executors[acc_id] = subprocess.Popen(cmd)
+                        
+                        # Add a small delay to stagger startup of multiple terminals and prevent resource spikes
+                        time.sleep(2.0)
                 else:
                     # Account deactivated, stop executor
                     if acc_id in active_executors:

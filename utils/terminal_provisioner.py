@@ -166,6 +166,26 @@ def find_mt5_source_dir(user_specified_path=None):
         if os.path.exists(os.path.join(p, "terminal64.exe")):
             return p
 
+    # 3. Dynamic scan of Program Files directories (1-2 levels deep) for custom MT5 terminals
+    program_files_paths = [r"C:\Program Files", r"C:\Program Files (x86)"]
+    for pf in program_files_paths:
+        if os.path.exists(pf):
+            try:
+                for item in os.listdir(pf):
+                    sub = os.path.join(pf, item)
+                    if os.path.isdir(sub):
+                        # Level 1 check
+                        exe = os.path.join(sub, "terminal64.exe")
+                        if os.path.exists(exe):
+                            return sub
+                        # Level 2 check inside "terminal" or similar subfolders
+                        for sub_item in ["terminal", "terminal64"]:
+                            exe2 = os.path.join(sub, sub_item, "terminal64.exe")
+                            if os.path.exists(exe2):
+                                return os.path.join(sub, sub_item)
+            except Exception:
+                pass
+
     return None
 
 def find_appdata_config_dir(terminal_exe_path):
@@ -184,6 +204,60 @@ def find_appdata_config_dir(terminal_exe_path):
         if os.path.exists(appdata_dir):
             return appdata_dir
     return None
+
+def find_best_appdata_config_dir(server_name, terminal_exe_path):
+    """
+    Scans all MetaQuotes AppData Terminal directories and finds the config directory
+    whose servers.dat contains the target server_name.
+    Falls back to the config directory of the specified terminal_exe_path.
+    """
+    default_config_dir = find_appdata_config_dir(terminal_exe_path)
+    
+    appdata = os.environ.get("APPDATA")
+    if not appdata:
+        return default_config_dir
+        
+    terminals_dir = os.path.join(appdata, "MetaQuotes", "Terminal")
+    if not os.path.exists(terminals_dir):
+        return default_config_dir
+        
+    # Standardize search queries (ASCII, UTF-8, and UTF-16LE bytes)
+    queries = []
+    # Clean and uppercase server name to make search robust (e.g. "DooTechnology-Live" -> "DOOTECHNOLOGY-LIVE")
+    clean_server = server_name.strip().upper()
+    
+    # We will search for substrings, e.g., if server is "XMGlobal-MT5 6", we also try "XMGLOBAL"
+    search_terms = [clean_server]
+    broker_name = clean_server.split('-')[0].split(' ')[0]
+    if len(broker_name) >= 3 and broker_name not in search_terms:
+        search_terms.append(broker_name)
+        
+    for term in search_terms:
+        for encoding in ["utf-8", "utf-16le", "ascii"]:
+            try:
+                queries.append(term.encode(encoding))
+            except Exception:
+                pass
+                
+    # Search all terminals' config directories
+    try:
+        for folder in os.listdir(terminals_dir):
+            config_dir = os.path.join(terminals_dir, folder, "config")
+            servers_dat = os.path.join(config_dir, "servers.dat")
+            if os.path.exists(servers_dat):
+                try:
+                    with open(servers_dat, "rb") as f:
+                        content = f.read()
+                    # Check if any of our query byte sequences are in servers.dat
+                    if any(q in content for q in queries):
+                        print(f"Found matching servers.dat in {config_dir} for server {server_name}")
+                        return config_dir
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"Error scanning terminals directory: {e}")
+        
+    return default_config_dir
 
 def provision_isolated_terminal(login, password, server, user_specified_path=None, account_id=None):
     """
@@ -220,7 +294,7 @@ def provision_isolated_terminal(login, password, server, user_specified_path=Non
     os.makedirs(dest_config_dir, exist_ok=True)
 
     # 3. Copy configuration files (servers.dat, accounts.dat, certificates)
-    appdata_config = find_appdata_config_dir(terminal_exe)
+    appdata_config = find_best_appdata_config_dir(server, terminal_exe)
     if appdata_config:
         for item in os.listdir(appdata_config):
             s_item = os.path.join(appdata_config, item)
