@@ -18,6 +18,7 @@ from utils.db import (
     verify_session, authenticate_user, create_session, create_user, delete_session,
     sync_data_to_live, sync_all_local_users_to_live
 )
+from utils.terminal_provisioner import terminate_executor_and_terminal
 
 app = FastAPI(title="Quanthropic.dev MT5 Copier Dashboard")
 
@@ -197,7 +198,28 @@ async def api_register(payload: RegisterPayload):
 @app.post("/api/logout")
 async def api_logout(session_token: Optional[str] = Cookie(None)):
     if session_token:
-        delete_session(session_token)
+        user_id = verify_session(session_token)
+        if user_id:
+            # 1. Fetch all accounts of this user
+            accounts = get_accounts(user_id=user_id)
+            for acc in accounts:
+                acc_id = acc["id"]
+                login = acc["login"]
+                terminal_path = acc.get("terminal_path")
+                
+                # 2. Deactivate the account in the DB so the orchestrator won't restart it
+                set_account_active(acc_id, False)
+                
+                # 3. Force stop executor and close MT5 terminal process
+                if terminal_path:
+                    try:
+                        terminate_executor_and_terminal(login, acc_id, terminal_path)
+                    except Exception as e:
+                        print(f"Error stopping terminal on logout: {e}")
+            
+            # 4. Delete session token from DB
+            delete_session(session_token)
+            
     response = JSONResponse(content={"status": "success", "message": "Logged out successfully"})
     response.delete_cookie(key="session_token")
     return response
@@ -394,6 +416,17 @@ async def api_toggle_account(account_id: int, request: Request, current_user: in
     data = await request.json()
     is_active = data.get("is_active", True)
     set_account_active(account_id, is_active)
+    
+    # If deactivating, kill executor and terminal
+    if not is_active:
+        terminal_path = account.get("terminal_path")
+        login = account["login"]
+        if terminal_path:
+            try:
+                terminate_executor_and_terminal(login, account_id, terminal_path)
+            except Exception as e:
+                print(f"Error terminating terminal on toggle: {e}")
+                
     status_str = "activated" if is_active else "deactivated"
     add_log("INFO", f"dashboard_user_{current_user}", f"Account ID {account_id} has been {status_str}", user_id=current_user)
     return {"status": "success", "message": f"Account {status_str}."}
@@ -403,7 +436,18 @@ async def api_delete_account(account_id: int, current_user: int = Depends(get_cu
     account = get_account(account_id)
     if not account or account.get("user_id") != current_user:
         raise HTTPException(status_code=403, detail="Not authorized to delete this account")
+    
+    terminal_path = account.get("terminal_path")
+    login = account["login"]
     delete_account(account_id)
+    
+    # If deleting, kill executor and terminal
+    if terminal_path:
+        try:
+            terminate_executor_and_terminal(login, account_id, terminal_path)
+        except Exception as e:
+            print(f"Error terminating terminal on delete: {e}")
+            
     return {"status": "success", "message": "Account deleted successfully."}
 
 @app.get("/api/trades")

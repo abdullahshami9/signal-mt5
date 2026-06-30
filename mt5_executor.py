@@ -10,7 +10,7 @@ from utils.db import (
     get_account, update_account_status, get_pending_signals_for_account,
     mark_signal_executed, add_trade, get_open_trades_for_account,
     update_trade_tp_status, add_log as db_add_log, get_pending_trades_for_account,
-    get_cancel_requested_trades_for_account
+    get_cancel_requested_trades_for_account, set_account_active
 )
 from utils.mt5_helpers import calculate_lot_size, divide_lots, get_filling_mode
 
@@ -812,6 +812,11 @@ def main():
     # Connect and Login
     if not connect_mt5(account):
         print(f"Error: Failed to connect or login for account {login}.", file=sys.stderr)
+        set_account_active(account_id, False)
+        # Kill the terminal process if it is still running
+        path = account.get("terminal_path")
+        if path:
+            kill_terminal_process(path)
         sys.exit(1)
         
     add_log("INFO", f"executor_acc_{login}", f"Executor process active for account {login}.")
@@ -829,6 +834,28 @@ def main():
                 else:
                     err = mt5.last_error()
                     update_account_status(account["id"], 0, 0, "disconnected", f"Lost connection: {err}")
+                    
+                    # Check if the terminal process is still running
+                    terminal_running = False
+                    path = account.get("terminal_path", "")
+                    if path:
+                        try:
+                            target_abs = os.path.abspath(path)
+                            for proc in psutil.process_iter(['pid', 'name', 'exe']):
+                                try:
+                                    if proc.info['exe'] and os.path.abspath(proc.info['exe']) == target_abs:
+                                        terminal_running = True
+                                        break
+                                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                    pass
+                        except Exception as e:
+                            add_log("WARNING", f"executor_acc_{login}", f"Error checking process status: {e}")
+                            
+                    if not terminal_running:
+                        add_log("INFO", f"executor_acc_{login}", "MT5 terminal is not running (manually closed). Deactivating account to prevent restart.")
+                        set_account_active(account["id"], False)
+                        break  # Exit the loop and shut down the executor
+                        
                     add_log("WARNING", f"executor_acc_{login}", f"Lost connection to MT5 terminal. Reconnecting...")
                     
                     # Try to reconnect
