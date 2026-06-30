@@ -26,6 +26,19 @@ def parse_args():
     parser.add_argument("--account-id", type=int, required=True, help="Database Account ID")
     return parser.parse_args()
 
+def kill_terminal_process(path):
+    target_abs = os.path.abspath(path)
+    for proc in psutil.process_iter(['pid', 'name', 'exe']):
+        try:
+            if proc.info['exe'] and os.path.abspath(proc.info['exe']) == target_abs:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                except psutil.TimeoutExpired:
+                    proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
 def connect_mt5(account):
     """
     Initializes MT5 connection and logs into the account.
@@ -57,11 +70,11 @@ def connect_mt5(account):
     except Exception as e:
         add_log("WARNING", f"executor_acc_{login}", f"Error checking process status: {e}")
         
+    cwd = os.path.dirname(path)
     if not is_running:
-        startup_config = os.path.abspath(os.path.join(os.path.dirname(path), "Config", "startup.ini"))
         add_log("INFO", f"executor_acc_{login}", "Terminal is not running. Launching isolated instance...")
         try:
-            subprocess.Popen([path, "/portable", f"/config:{startup_config}"])
+            subprocess.Popen([path, "/portable", "/config:Config\\startup.ini"], cwd=cwd)
             # Give it some initial time to boot up
             time.sleep(5)
         except Exception as e:
@@ -74,7 +87,7 @@ def connect_mt5(account):
         "login": login,
         "password": password,
         "server": server,
-        "timeout": 15000
+        "timeout": 30000
     }
     
     connected = False
@@ -85,6 +98,20 @@ def connect_mt5(account):
             break
         err = mt5.last_error()
         add_log("WARNING", f"executor_acc_{login}", f"Connection attempt {attempt} failed: {err}. Retrying in 5s...")
+        
+        # Self-healing: if connection fails repeatedly, kill and restart
+        if attempt == 3 and is_running:
+            add_log("WARNING", f"executor_acc_{login}", "Terminal process is unresponsive. Terminating and relaunching clean instance...")
+            kill_terminal_process(path)
+            is_running = False
+            time.sleep(2)
+            
+        if not is_running:
+            try:
+                subprocess.Popen([path, "/portable", "/config:Config\\startup.ini"], cwd=cwd)
+            except Exception as e:
+                add_log("ERROR", f"executor_acc_{login}", f"Failed to relaunch terminal process: {e}")
+                
         time.sleep(5)
         
     if not connected:
