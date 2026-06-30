@@ -49,10 +49,10 @@ def connect_mt5(account):
     server = account["server"]
     path = account["terminal_path"]
     
-    # Check if terminal path exists
-    if path and not os.path.exists(path):
-        add_log("ERROR", f"executor_acc_{login}", f"Terminal path does not exist: {path}")
-        update_account_status(account["id"], 0, 0, "disconnected", f"Path not found: {path}")
+    # Check if terminal path exists and is valid
+    if not path or not os.path.exists(path):
+        add_log("ERROR", f"executor_acc_{login}", f"Terminal path is invalid or does not exist: {path}")
+        update_account_status(account["id"], 0, 0, "disconnected", f"Path invalid: {path}")
         return False
 
     add_log("INFO", f"executor_acc_{login}", "Initializing MT5 connection...")
@@ -80,9 +80,10 @@ def connect_mt5(account):
         except Exception as e:
             add_log("ERROR", f"executor_acc_{login}", f"Failed to launch terminal process: {e}")
             
-    # Call mt5.initialize to connect to the running terminal with retry loop
+    # Call mt5.initialize to connect to the running terminal with retry loop.
+    # Note: path must be passed as a positional argument because MetaTrader5 C extension
+    # does not accept 'path' as a keyword argument in some versions.
     init_params = {
-        "path": path,
         "portable": True,
         "login": login,
         "password": password,
@@ -93,7 +94,7 @@ def connect_mt5(account):
     connected = False
     for attempt in range(1, 16): # Try 15 times (up to 75 seconds total)
         add_log("INFO", f"executor_acc_{login}", f"Attempting MT5 connection (Attempt {attempt}/15)...")
-        if mt5.initialize(**init_params):
+        if mt5.initialize(path, **init_params):
             connected = True
             break
         err = mt5.last_error()
